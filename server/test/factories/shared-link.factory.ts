@@ -35,10 +35,12 @@ export class SharedLinkFactory {
       albumId,
       createdAt: newDate(),
       expiresAt: null,
+      uploadExpiresAt: null,
       allowUpload: true,
       allowDownload: true,
       showExif: true,
       password: null,
+      uploadPassword: null,
       slug: null,
       ...dto,
     });
