@@ -1,73 +1,122 @@
 <script lang="ts">
   import { locale } from '$lib/stores/preferences.store';
   import { uploadAssetsStore } from '$lib/stores/upload';
+  import { UploadState } from '$lib/types';
   import { uploadExecutionQueue } from '$lib/utils/file-uploader';
   import { Icon, IconButton, toastManager } from '@immich/ui';
-  import { mdiCancel, mdiCloudUploadOutline, mdiCog, mdiWindowMinimize } from '@mdi/js';
+  import { mdiCancel, mdiCheckCircle, mdiClose, mdiCloudUploadOutline, mdiCog, mdiWindowMinimize } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import { quartInOut } from 'svelte/easing';
   import { fade, scale } from 'svelte/transition';
   import UploadAssetPreview from './UploadAssetPreview.svelte';
 
-  let showDetail = $state(false);
+  let showDetail = $state(true);
   let showOptions = $state(false);
   let concurrency = $state(uploadExecutionQueue.concurrency);
+  let hasAnnouncedCompletion = $state(false);
 
   let { stats, isDismissible, isUploading, remainingUploads } = uploadAssetsStore;
+
+  const overallProgress = $derived(
+    $stats.total === 0 ? 0 : Math.round((($stats.total - $remainingUploads) / $stats.total) * 100),
+  );
+  const isComplete = $derived($isUploading && $remainingUploads === 0);
+  const hasErrors = $derived($stats.errors > 0);
 
   $effect(() => {
     if ($isUploading) {
       showDetail = true;
+      hasAnnouncedCompletion = false;
     }
   });
+
+  $effect(() => {
+    if (!isComplete || hasAnnouncedCompletion) {
+      return;
+    }
+
+    hasAnnouncedCompletion = true;
+
+    if (hasErrors) {
+      toastManager.danger($t('upload_errors', { values: { count: $stats.errors } }));
+      return;
+    }
+
+    if ($stats.success > 0) {
+      toastManager.primary($t('upload_success'));
+    }
+
+    if ($stats.duplicates > 0) {
+      toastManager.warning($t('upload_skipped_duplicates', { values: { count: $stats.duplicates } }));
+    }
+
+    if ($stats.errors === 0 && $stats.duplicates === 0) {
+      const timeout = setTimeout(() => {
+        uploadAssetsStore.reset();
+      }, 4000);
+      return () => clearTimeout(timeout);
+    }
+  });
+
+  const dismissPanel = () => {
+    uploadAssetsStore.reset();
+  };
 </script>
 
 {#if $isUploading}
   <div
     in:fade={{ duration: 250 }}
     out:fade={{ duration: 250 }}
-    onoutroend={() => {
-      if ($stats.errors > 0) {
-        toastManager.danger($t('upload_errors', { values: { count: $stats.errors } }));
-      } else if ($stats.success > 0) {
-        toastManager.primary($t('upload_success'));
-      }
-      if ($stats.duplicates > 0) {
-        toastManager.warning($t('upload_skipped_duplicates', { values: { count: $stats.duplicates } }));
-      }
-      uploadAssetsStore.reset();
-    }}
-    class="fixed inset-e-16 bottom-6 z-60"
+    class="fixed inset-x-3 bottom-4 z-[100] sm:inset-e-6 sm:inset-s-auto sm:bottom-6 sm:w-96"
   >
     {#if showDetail}
       <div
         in:scale={{ duration: 250, easing: quartInOut }}
-        class="w-81 rounded-xl border border-gray-200 bg-subtle p-4 text-sm shadow-xs dark:border-subtle"
+        class="rounded-2xl border border-gray-200 bg-white p-4 text-sm shadow-xl dark:border-subtle dark:bg-immich-dark-gray"
       >
-        <div class="place-item-center mb-4 flex justify-between">
-          <div class="flex flex-col gap-1">
-            <p class="text-xm immich-form-label">
-              {$t('upload_progress', {
-                values: {
-                  remaining: $remainingUploads,
-                  processed: $stats.total - $remainingUploads,
-                  total: $stats.total,
-                },
-              })}
-            </p>
-            <p class="text-xs immich-form-label">
+        <div class="mb-3 flex items-start justify-between gap-3">
+          <div class="min-w-0 flex-1">
+            {#if isComplete}
+              <div class="mb-1 flex items-center gap-2">
+                <Icon
+                  icon={hasErrors ? mdiCancel : mdiCheckCircle}
+                  size="20"
+                  class={hasErrors ? 'text-danger' : 'text-success'}
+                />
+                <p class="font-semibold text-primary">
+                  {#if hasErrors}
+                    {$t('upload_completed_with_errors')}
+                  {:else}
+                    {$t('upload_completed')}
+                  {/if}
+                </p>
+              </div>
+            {:else}
+              <p class="font-semibold text-primary">
+                {$t('upload_progress', {
+                  values: {
+                    remaining: $remainingUploads,
+                    processed: $stats.total - $remainingUploads,
+                    total: $stats.total,
+                  },
+                })}
+              </p>
+            {/if}
+
+            <p class="mt-1 text-xs text-gray-600 dark:text-gray-300">
               {$t('upload_status_uploaded')}
-              <span class="text-success">{$stats.success.toLocaleString($locale)}</span>
-              -
+              <span class="font-medium text-success">{$stats.success.toLocaleString($locale)}</span>
+              ·
               {$t('upload_status_errors')}
-              <span class="text-danger">{$stats.errors.toLocaleString($locale)}</span>
-              -
+              <span class="font-medium text-danger">{$stats.errors.toLocaleString($locale)}</span>
+              ·
               {$t('upload_status_duplicates')}
-              <span class="text-warning">{$stats.duplicates.toLocaleString($locale)}</span>
+              <span class="font-medium text-warning">{$stats.duplicates.toLocaleString($locale)}</span>
             </p>
           </div>
-          <div class="flex flex-col items-end">
-            <div class="flex flex-row">
+
+          <div class="flex shrink-0 items-center gap-1">
+            {#if !isComplete}
               <IconButton
                 variant="ghost"
                 shape="round"
@@ -86,21 +135,36 @@
                 size="small"
                 onclick={() => (showDetail = false)}
               />
-            </div>
-            {#if $isDismissible}
+            {/if}
+            {#if isComplete || $isDismissible}
               <IconButton
                 variant="ghost"
                 shape="round"
                 color="secondary"
-                aria-label={$t('dismiss_all_errors')}
-                icon={mdiCancel}
+                aria-label={$t('close')}
+                icon={mdiClose}
                 size="small"
-                onclick={() => uploadAssetsStore.dismissErrors()}
+                onclick={dismissPanel}
               />
             {/if}
           </div>
         </div>
-        {#if showOptions}
+
+        <div class="mb-3">
+          <div class="relative h-2.5 w-full overflow-hidden rounded-full bg-gray-200 dark:bg-gray-700">
+            <div
+              class="h-full rounded-full transition-all duration-200 {hasErrors && isComplete
+                ? 'bg-danger'
+                : isComplete
+                  ? 'bg-success'
+                  : 'bg-immich-primary'}"
+              style={`width: ${Math.max(overallProgress, isComplete ? 100 : 2)}%`}
+            ></div>
+          </div>
+          <p class="mt-1 text-end text-[11px] text-gray-500 dark:text-gray-400">{overallProgress}%</p>
+        </div>
+
+        {#if showOptions && !isComplete}
           <div class="mb-4 max-h-100 immich-scrollbar overflow-y-auto rounded-lg">
             <div class="flex h-6.5 place-items-center gap-1">
               <label class="immich-form-label" for="upload-concurrency">{$t('upload_concurrency')}</label>
@@ -119,14 +183,15 @@
             />
           </div>
         {/if}
-        <div class="flex max-h-[400px] immich-scrollbar flex-col gap-2 overflow-y-auto rounded-lg">
+
+        <div class="flex max-h-[320px] immich-scrollbar flex-col gap-2 overflow-y-auto rounded-lg">
           {#each $uploadAssetsStore as uploadAsset (uploadAsset.id)}
             <UploadAssetPreview {uploadAsset} />
           {/each}
         </div>
       </div>
     {:else}
-      <div class="rounded-full">
+      <div class="relative ms-auto w-fit rounded-full">
         <button
           type="button"
           in:scale={{ duration: 250, easing: quartInOut }}

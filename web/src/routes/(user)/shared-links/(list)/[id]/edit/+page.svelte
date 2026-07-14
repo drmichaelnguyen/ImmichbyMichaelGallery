@@ -22,9 +22,11 @@
   let allowUpload = $state(sharedLink.allowUpload);
   let showMetadata = $state(sharedLink.showMetadata);
   let password = $state(sharedLink.password ?? '');
+  let uploadPassword = $state(sharedLink.uploadPassword ?? '');
   let slug = $state(sharedLink.slug ?? '');
   let shareType = sharedLink.album ? SharedLinkType.Album : SharedLinkType.Individual;
   let expiresAt = $state(sharedLink.expiresAt);
+  let uploadExpiresAt = $state(sharedLink.uploadExpiresAt ?? null);
 
   const onClose = async () => {
     await goto(Route.sharedLinks());
@@ -34,7 +36,9 @@
     const success = await handleUpdateSharedLink(sharedLink, {
       description,
       password: password ?? null,
+      uploadPassword: allowUpload ? uploadPassword || null : null,
       expiresAt,
+      uploadExpiresAt: allowUpload ? uploadExpiresAt : null,
       allowUpload,
       allowDownload,
       showMetadata,
@@ -67,7 +71,9 @@
     bind:description
     bind:allowDownload
     bind:allowUpload
+    bind:uploadPassword
     bind:showMetadata
     bind:expiresAt
+    bind:uploadExpiresAt
   />
 </FormModal>

@@ -12,6 +12,7 @@ export enum ImmichCookie {
   AuthType = 'immich_auth_type',
   IsAuthenticated = 'immich_is_authenticated',
   SharedLinkToken = 'immich_shared_link_token',
+  SharedLinkUploadToken = 'immich_shared_link_upload_token',
   OAuthState = 'immich_oauth_state',
   OAuthCodeVerifier = 'immich_oauth_code_verifier',
 }
@@ -363,6 +364,7 @@ export const UserMetadataKeySchema = z
 
 export enum AssetMetadataKey {
   MobileApp = 'mobile-app',
+  GuestContributor = 'guest-contributor',
 }
 
 export enum UserAvatarColor {

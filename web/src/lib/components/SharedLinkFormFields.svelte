@@ -9,8 +9,10 @@
     description: string;
     allowDownload: boolean;
     allowUpload: boolean;
+    uploadPassword: string;
     showMetadata: boolean;
     expiresAt: string | null;
+    uploadExpiresAt: string | null;
   };
 
   let {
@@ -19,13 +21,22 @@
     description = $bindable(),
     allowDownload = $bindable(),
     allowUpload = $bindable(),
+    uploadPassword = $bindable(),
     showMetadata = $bindable(),
     expiresAt = $bindable(),
+    uploadExpiresAt = $bindable(),
   }: Props = $props();
 
   $effect(() => {
     if (!showMetadata && allowDownload) {
       allowDownload = false;
+    }
+  });
+
+  $effect(() => {
+    if (!allowUpload) {
+      uploadExpiresAt = null;
+      uploadPassword = '';
     }
   });
 </script>
@@ -48,7 +59,12 @@
     <Input bind:value={description} autocomplete="off" />
   </Field>
 
-  <SharedLinkExpiration bind:expiresAt />
+  <SharedLinkExpiration
+    bind:expiresAt
+    label={$t('link_expires_after')}
+    description={$t('shared_link_expire_description')}
+  />
+
   <Field label={$t('show_metadata')}>
     <Switch bind:checked={showMetadata} />
   </Field>
@@ -57,7 +73,23 @@
     <Switch bind:checked={allowDownload} />
   </Field>
 
-  <Field label={$t('allow_public_user_to_upload')}>
-    <Switch bind:checked={allowUpload} />
-  </Field>
+  <div class="rounded-xl border border-gray-200 p-3 dark:border-immich-dark-gray">
+    <Field label={$t('allow_public_user_to_upload')} description={$t('allow_public_user_to_upload_description')}>
+      <Switch bind:checked={allowUpload} />
+    </Field>
+
+    {#if allowUpload}
+      <div class="mt-4 flex flex-col gap-4">
+        <Field label={$t('upload_password')} description={$t('upload_password_description')}>
+          <PasswordInput bind:value={uploadPassword} autocomplete="new-password" />
+        </Field>
+
+        <SharedLinkExpiration
+          bind:expiresAt={uploadExpiresAt}
+          label={$t('upload_until')}
+          description={$t('shared_link_upload_expire_description')}
+        />
+      </div>
+    {/if}
+  </div>
 </div>

@@ -1,6 +1,5 @@
 import {
   AssetEditAction,
-  AssetMediaSize,
   AssetTypeEnum,
   MirrorAxis,
   type AssetResponseDto,
@@ -9,7 +8,6 @@ import {
 import { clamp } from 'lodash-es';
 import { tick } from 'svelte';
 import { type EditActions, type EditToolManager } from '$lib/managers/edit/edit-manager.svelte';
-import { getAssetMediaUrl } from '$lib/utils';
 import { getDimensions } from '$lib/utils/asset-utils';
 import { normalizeTransformEdits } from '$lib/utils/editor';
 import { handleError } from '$lib/utils/handle-error';
@@ -147,7 +145,12 @@ class TransformManager implements EditToolManager {
 
       edits.push({
         action: AssetEditAction.Crop,
-        parameters: cropRegion,
+        parameters: {
+          x: Math.round(cropRegion.x),
+          y: Math.round(cropRegion.y),
+          width: Math.round(cropRegion.width),
+          height: Math.round(cropRegion.height),
+        },
       });
     }
 
@@ -192,10 +195,15 @@ class TransformManager implements EditToolManager {
     this.onImageLoad([]);
   }
 
+  private pendingEdits: EditActions | null = null;
+  private readonly onGlobalPointerMove = (event: PointerEvent) => this.handlePointerMove(event);
+  private readonly onGlobalPointerUp = () => this.handlePointerUp();
+
   async onActivate(asset: AssetResponseDto, edits: EditActions): Promise<void> {
     const originalSize = getDimensions(asset.exifInfo!);
     this.originalImageSize = { width: originalSize.width ?? 0, height: originalSize.height ?? 0 };
     this.isVideoMode = asset.type === AssetTypeEnum.Video;
+    this.pendingEdits = edits;
 
     if (this.isVideoMode) {
       const width = asset.width ?? originalSize.width ?? 0;
@@ -214,23 +222,6 @@ class TransformManager implements EditToolManager {
       return;
     }
 
-    this.imgElement = new Image();
-
-    const imageURL = getAssetMediaUrl({
-      id: asset.id,
-      cacheKey: asset.thumbhash,
-      edited: false,
-      size: AssetMediaSize.Preview,
-    });
-
-    this.imgElement.src = imageURL;
-    this.imgElement.addEventListener('load', () => transformManager.onImageLoad(edits), { passive: true });
-    this.imgElement.addEventListener('error', (error) => handleError(error, 'ErrorLoadingImage'), {
-      passive: true,
-    });
-
-    globalThis.addEventListener('mousemove', (e: MouseEvent) => transformManager.handleMouseMove(e), { passive: true });
-
     const transformEdits = edits.filter((e) => e.action === 'rotate' || e.action === 'mirror');
 
     // Normalize rotation and mirror edits to single rotation and mirror state
@@ -240,13 +231,51 @@ class TransformManager implements EditToolManager {
     this.mirrorHorizontal = normalizedTransformation.mirrorHorizontal;
     this.mirrorVertical = normalizedTransformation.mirrorVertical;
 
-    await tick();
+    globalThis.addEventListener('pointermove', this.onGlobalPointerMove, { passive: true });
 
-    this.resizeCanvas();
+    // CropArea mounts first (see editManager.initialize) and binds the visible <img>.
+    await tick();
+    this.bindImageLoad(edits);
+  }
+
+  /** Re-measure after Transform tab remounts CropArea. */
+  relayout() {
+    if (this.isVideoMode) {
+      return;
+    }
+    this.bindImageLoad(this.pendingEdits);
+  }
+
+  private bindImageLoad(edits: EditActions | null = null) {
+    const img = this.imgElement;
+    if (!img) {
+      return;
+    }
+
+    const onError = (error: Event | string) => handleError(error, 'ErrorLoadingImage');
+    img.addEventListener('error', onError, { passive: true, once: true });
+
+    const finish = () => this.onImageLoad(edits);
+    if (img.complete && img.naturalWidth > 0) {
+      finish();
+      return;
+    }
+
+    img.addEventListener('load', finish, { once: true });
   }
 
   onDeactivate() {
-    globalThis.removeEventListener('mousemove', transformManager.handleMouseMove);
+    globalThis.removeEventListener('pointermove', this.onGlobalPointerMove);
+    globalThis.removeEventListener('pointerup', this.onGlobalPointerUp);
+    globalThis.removeEventListener('pointercancel', this.onGlobalPointerUp);
+    this.pendingEdits = null;
+  }
+
+  private getNaturalSize(img: HTMLImageElement): ImageDimensions {
+    return {
+      width: img.naturalWidth || img.width,
+      height: img.naturalHeight || img.height,
+    };
   }
 
   reset() {
@@ -457,7 +486,12 @@ class TransformManager implements EditToolManager {
       return;
     }
 
-    this.cropImageSize = { width: img.width, height: img.height };
+    const natural = this.getNaturalSize(img);
+    if (natural.width <= 0 || natural.height <= 0) {
+      return;
+    }
+
+    this.cropImageSize = natural;
     const scale = this.calculateScale();
 
     if (edits === null) {
@@ -485,10 +519,10 @@ class TransformManager implements EditToolManager {
         // The stored coordinates are for the original image, but we display mirrored
         // So we need to mirror the crop coordinates to match the preview
         if (this.mirrorHorizontal) {
-          x = img.width - x - width;
+          x = natural.width - x - width;
         }
         if (this.mirrorVertical) {
-          y = img.height - y - height;
+          y = natural.height - y - height;
         }
 
         // Convert from absolute pixel coordinates to display coordinates
@@ -502,15 +536,15 @@ class TransformManager implements EditToolManager {
         this.region = {
           x: 0,
           y: 0,
-          width: img.width * scale,
-          height: img.height * scale,
+          width: natural.width * scale,
+          height: natural.height * scale,
         };
       }
     }
     this.cropImageScale = scale;
 
-    img.style.width = `${img.width * scale}px`;
-    img.style.height = `${img.height * scale}px`;
+    img.style.width = `${natural.width * scale}px`;
+    img.style.height = `${natural.height * scale}px`;
 
     this.draw();
   }
@@ -523,13 +557,30 @@ class TransformManager implements EditToolManager {
       return 1;
     }
 
-    const containerWidth = cropArea.clientWidth;
-    const containerHeight = cropArea.clientHeight;
+    const natural = this.getNaturalSize(img);
+    if (natural.width <= 0 || natural.height <= 0) {
+      return 1;
+    }
+
+    // Prefer the outer flex container — crop-area size is driven by the image itself.
+    const parent = cropArea.parentElement;
+    const padding = 64; // matches p-8 on the crop container
+    let containerWidth = Math.max(1, (parent?.clientWidth || cropArea.clientWidth) - padding);
+    let containerHeight = Math.max(1, (parent?.clientHeight || cropArea.clientHeight) - padding);
+
+    // CSS rotate keeps the layout box axis-aligned; swap available space so the
+    // visual still fits inside the photo area after 90° / 270°.
+    if (this.normalizedRotation % 180 > 0) {
+      const layoutMaxWidth = containerHeight;
+      const layoutMaxHeight = containerWidth;
+      containerWidth = layoutMaxWidth;
+      containerHeight = layoutMaxHeight;
+    }
 
     // Fit image to container while maintaining aspect ratio
-    let scale = containerWidth / img.width;
-    if (img.height * scale > containerHeight) {
-      scale = containerHeight / img.height;
+    let scale = containerWidth / natural.width;
+    if (natural.height * scale > containerHeight) {
+      scale = containerHeight / natural.height;
     }
 
     return scale;
@@ -541,6 +592,7 @@ class TransformManager implements EditToolManager {
       return this.region;
     }
 
+    const natural = this.getNaturalSize(img);
     const scaleRatio = scale / this.cropImageScale;
     const scaledRegion = {
       x: this.region.x * scaleRatio,
@@ -551,8 +603,8 @@ class TransformManager implements EditToolManager {
 
     // Constrain to scaled image bounds
     return this.constrainToBounds(scaledRegion, {
-      width: img.width * scale,
-      height: img.height * scale,
+      width: natural.width * scale,
+      height: natural.height * scale,
     });
   }
 
@@ -560,7 +612,7 @@ class TransformManager implements EditToolManager {
     const img = this.imgElement;
     const cropArea = this.cropAreaEl;
 
-    if (!cropArea || !img) {
+    if (!cropArea || !img || img.naturalWidth <= 0) {
       return;
     }
 
@@ -568,35 +620,43 @@ class TransformManager implements EditToolManager {
     this.region = this.normalizeCropArea(scale);
     this.cropImageScale = scale;
 
-    img.style.width = `${img.width * scale}px`;
-    img.style.height = `${img.height * scale}px`;
+    const natural = this.getNaturalSize(img);
+    img.style.width = `${natural.width * scale}px`;
+    img.style.height = `${natural.height * scale}px`;
 
     this.draw();
   }
 
-  handleMouseDownOn(e: MouseEvent, resizeBoundary: ResizeBoundary) {
+  handlePointerDownOn(e: PointerEvent, resizeBoundary: ResizeBoundary) {
     if (e.button !== 0) {
       return;
     }
 
+    e.preventDefault();
     this.isInteracting = true;
     this.resizeSide = resizeBoundary;
     if (resizeBoundary === ResizeBoundary.None) {
       this.isDragging = true;
-      const { mouseX, mouseY } = this.getMousePosition(e);
+      const { mouseX, mouseY } = this.getPointerPosition(e);
       this.dragAnchor = { x: mouseX - this.region.x, y: mouseY - this.region.y };
     }
 
     document.body.style.userSelect = 'none';
-    globalThis.addEventListener('mouseup', () => this.handleMouseUp(), { passive: true });
+    globalThis.addEventListener('pointerup', this.onGlobalPointerUp, { passive: true });
+    globalThis.addEventListener('pointercancel', this.onGlobalPointerUp, { passive: true });
   }
 
-  handleMouseMove(e: MouseEvent) {
-    if (!this.cropAreaEl) {
+  /** @deprecated Use handlePointerDownOn */
+  handleMouseDownOn(e: MouseEvent, resizeBoundary: ResizeBoundary) {
+    this.handlePointerDownOn(e as PointerEvent, resizeBoundary);
+  }
+
+  handlePointerMove(e: PointerEvent) {
+    if (!this.cropAreaEl || (!this.isDragging && this.resizeSide === ResizeBoundary.None)) {
       return;
     }
 
-    const { mouseX, mouseY } = this.getMousePosition(e);
+    const { mouseX, mouseY } = this.getPointerPosition(e);
 
     if (this.isDragging) {
       this.moveCrop(mouseX, mouseY);
@@ -605,8 +665,13 @@ class TransformManager implements EditToolManager {
     }
   }
 
-  handleMouseUp() {
-    globalThis.removeEventListener('mouseup', this.handleMouseUp);
+  handleMouseMove(e: MouseEvent) {
+    this.handlePointerMove(e as PointerEvent);
+  }
+
+  handlePointerUp() {
+    globalThis.removeEventListener('pointerup', this.onGlobalPointerUp);
+    globalThis.removeEventListener('pointercancel', this.onGlobalPointerUp);
     document.body.style.userSelect = '';
 
     this.isInteracting = false;
@@ -614,39 +679,42 @@ class TransformManager implements EditToolManager {
     this.resizeSide = ResizeBoundary.None;
   }
 
-  getMousePosition(e: MouseEvent) {
+  handleMouseUp() {
+    this.handlePointerUp();
+  }
+
+  /**
+   * Map pointer coordinates into the crop-area's local (unrotated) space.
+   * CSS `rotate` uses transform-origin: center, so we invert around the visual center.
+   */
+  getPointerPosition(e: Pick<PointerEvent, 'clientX' | 'clientY'>) {
     if (!this.cropAreaEl) {
       throw new Error('Crop area is undefined');
     }
-    const clientRect = this.cropAreaEl.getBoundingClientRect();
 
-    switch (this.normalizedRotation) {
-      case 90: {
-        return {
-          mouseX: e.clientY - clientRect.top,
-          mouseY: -e.clientX + clientRect.right,
-        };
-      }
-      case 180: {
-        return {
-          mouseX: -e.clientX + clientRect.right,
-          mouseY: -e.clientY + clientRect.bottom,
-        };
-      }
-      case 270: {
-        return {
-          mouseX: -e.clientY + clientRect.bottom,
-          mouseY: e.clientX - clientRect.left,
-        };
-      }
-      // also case 0:
-      default: {
-        return {
-          mouseX: e.clientX - clientRect.left,
-          mouseY: e.clientY - clientRect.top,
-        };
-      }
-    }
+    const el = this.cropAreaEl;
+    const rect = el.getBoundingClientRect();
+    const width = el.clientWidth;
+    const height = el.clientHeight;
+    const angle = (this.normalizedRotation * Math.PI) / 180;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+
+    const dx = e.clientX - (rect.left + rect.width / 2);
+    const dy = e.clientY - (rect.top + rect.height / 2);
+
+    // Inverse of CSS rotate(θ): x' = x cos - y sin, y' = x sin + y cos
+    const localX = dx * cos + dy * sin;
+    const localY = -dx * sin + dy * cos;
+
+    return {
+      mouseX: localX + width / 2,
+      mouseY: localY + height / 2,
+    };
+  }
+
+  getMousePosition(e: MouseEvent) {
+    return this.getPointerPosition(e);
   }
 
   moveCrop(mouseX: number, mouseY: number) {

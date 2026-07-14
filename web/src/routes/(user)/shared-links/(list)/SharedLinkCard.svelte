@@ -53,6 +53,9 @@
 
     return items;
   });
+
+  let uploadExpiresAt = $derived(sharedLink.uploadExpiresAt ? DateTime.fromISO(sharedLink.uploadExpiresAt) : undefined);
+  let isUploadExpired = $derived(uploadExpiresAt ? now > uploadExpiresAt : false);
 </script>
 
 <div
@@ -76,6 +79,16 @@
             {$t('expires_date', { values: { date: '∞' } })}
           {/if}
         </Text>
+
+        {#if sharedLink.allowUpload}
+          <Text size="tiny" color={isUploadExpired ? 'danger' : 'muted'} fontWeight="medium">
+            {#if isUploadExpired}
+              {$t('upload_window_ended')}
+            {:else if uploadExpiresAt}
+              {$t('upload_until')}: {getCountDownExpirationDate(uploadExpiresAt, now)}
+            {/if}
+          </Text>
+        {/if}
 
         <Text size="large" color="primary" class="flex place-items-center gap-2 break-all" fontWeight="medium">
           {#if sharedLink.type === SharedLinkType.Album}

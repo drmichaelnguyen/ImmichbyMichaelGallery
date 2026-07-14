@@ -251,6 +251,7 @@ export class AssetController {
   }
 
   @Post(':id/edits/render')
+  @HttpCode(HttpStatus.OK)
   @FileResponse()
   @Authenticated({ permission: Permission.AssetDownload, sharedLink: true })
   @Endpoint({

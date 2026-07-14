@@ -24,6 +24,7 @@
     locationOptionsFromMapMarkers,
     toTimelineFilterOptions,
   } from '$lib/utils/shared-link-filters';
+  import { canUploadToSharedLink, ensureSharedLinkContributorInfo, ensureSharedLinkUploadAccess } from '$lib/utils/shared-link-upload';
   import { getAlbumMapMarkers, type AlbumResponseDto, type MapMarkerResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
   import { ActionButton, IconButton } from '@immich/ui';
   import GalleryLogo from '$lib/components/shared-components/GalleryLogo.svelte';
@@ -41,6 +42,7 @@
   let { sharedLink }: Props = $props();
 
   const album = sharedLink.album as AlbumResponseDto;
+  const canUpload = $derived(canUploadToSharedLink(sharedLink));
 
   let filters = $state<SharedLinkFilter>({});
   let mapMarkers = $state<MapMarkerResponseDto[]>([]);
@@ -67,9 +69,27 @@
     }
   });
 
+  const startUpload = async (files?: File[]) => {
+    if (!(await ensureSharedLinkUploadAccess(sharedLink))) {
+      return;
+    }
+
+    const contributor = await ensureSharedLinkContributorInfo(sharedLink);
+    if (!contributor) {
+      return;
+    }
+
+    if (files?.length) {
+      await fileUploadHandler({ files, albumId: album.id, contributor });
+      return;
+    }
+
+    await openFileUploadDialog({ albumId: album.id, contributor });
+  };
+
   dragAndDropFilesStore.subscribe((value) => {
-    if (value.isDragging && value.files.length > 0) {
-      handlePromiseError(fileUploadHandler({ files: value.files, albumId: album.id }));
+    if (value.isDragging && value.files.length > 0 && canUploadToSharedLink(sharedLink)) {
+      handlePromiseError(startUpload(value.files));
       dragAndDropFilesStore.set({ isDragging: false, files: [] });
     }
   });
@@ -152,13 +172,13 @@
       {#snippet trailing()}
         <ActionButton action={Cast} />
 
-        {#if sharedLink.allowUpload}
+        {#if canUpload}
           <IconButton
             shape="round"
             color="secondary"
             variant="ghost"
             aria-label={$t('add_photos')}
-            onclick={() => openFileUploadDialog({ albumId: album.id })}
+            onclick={() => handlePromiseError(startUpload())}
             icon={mdiFileImagePlusOutline}
           />
         {/if}
@@ -184,6 +204,7 @@
         {#if sharedLink.showMetadata && featureFlagsManager.value.map}
           <AlbumMap {album} />
         {/if}
+        <ThemeButton />
         <button
           type="button"
           class="rounded-full border px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-gray-200/70 dark:hover:bg-gray-700/60"
@@ -193,7 +214,6 @@
         >
           {$preferUnenhancedSharedThumbnails ? $t('view_mode_standard') : $t('view_mode_enhanced')}
         </button>
-        <ThemeButton />
       {/snippet}
     </ControlAppBar>
   {/if}

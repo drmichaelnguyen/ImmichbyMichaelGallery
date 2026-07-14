@@ -13,7 +13,7 @@
   import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { preferUnenhancedSharedThumbnails } from '$lib/stores/preferences.store';
-  import { handlePromiseError } from '$lib/utils';
+  import { handlePromiseError, isMobileDownloadClient } from '$lib/utils';
   import { downloadArchive } from '$lib/utils/asset-utils';
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
   import { handleError } from '$lib/utils/handle-error';
@@ -21,10 +21,12 @@
     filterSharedAssets,
     locationOptionsFromAssets,
   } from '$lib/utils/shared-link-filters';
+  import { canUploadToSharedLink, ensureSharedLinkContributorInfo, ensureSharedLinkUploadAccess } from '$lib/utils/shared-link-upload';
   import type { SharedLinkFilter } from '$lib/types';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import { getAssetInfo, type SharedLinkResponseDto } from '@immich/sdk';
-  import { IconButton, toastManager } from '@immich/ui';
+  import { handleDownloadAsset } from '$lib/services/asset.service';
+  import type { SharedLinkResponseDto } from '@immich/sdk';
+  import { IconButton } from '@immich/ui';
   import GalleryLogo from '$lib/components/shared-components/GalleryLogo.svelte';
   import { mdiDownload, mdiFileImagePlusOutline, mdiSelectAll } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -41,27 +43,46 @@
   let filters = $state<SharedLinkFilter>({});
   const locationOptions = $derived(locationOptionsFromAssets(sharedLink.assets));
   const assets = $derived(filterSharedAssets(sharedLink.assets, filters));
+  const canUpload = $derived(canUploadToSharedLink(sharedLink));
 
   const viewport: Viewport = $state({ width: 0, height: 0 });
 
   dragAndDropFilesStore.subscribe((value) => {
-    if (value.isDragging && value.files.length > 0) {
+    if (value.isDragging && value.files.length > 0 && canUploadToSharedLink(sharedLink)) {
       handlePromiseError(handleUploadAssets(value.files));
       dragAndDropFilesStore.set({ isDragging: false, files: [] });
     }
   });
 
   const downloadAssets = async () => {
+    // Prefer share-to-gallery on phones instead of a zip that lands in Files.
+    if (isMobileDownloadClient() && assets.length > 0 && assets.length <= 20) {
+      for (const [index, asset] of assets.entries()) {
+        await handleDownloadAsset(asset, { edited: true });
+        if (index < assets.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+        }
+      }
+      return;
+    }
+
     await downloadArchive(`immich-shared.zip`, { assetIds: assets.map((asset) => asset.id) });
   };
 
   const handleUploadAssets = async (files: File[] = []) => {
     try {
-      await (!files || files.length === 0 || !Array.isArray(files)
-        ? openFileUploadDialog()
-        : fileUploadHandler({ files }));
+      if (!(await ensureSharedLinkUploadAccess(sharedLink))) {
+        return;
+      }
 
-      toastManager.primary();
+      const contributor = await ensureSharedLinkContributorInfo(sharedLink);
+      if (!contributor) {
+        return;
+      }
+
+      await (!files || files.length === 0 || !Array.isArray(files)
+        ? openFileUploadDialog({ contributor })
+        : fileUploadHandler({ files, contributor }));
     } catch (error) {
       handleError(error, $t('errors.unable_to_add_assets_to_shared_link'));
     }
@@ -84,7 +105,7 @@
   };
 </script>
 
-{#if sharedLink?.allowUpload || sharedLink.assets.length > 1}
+{#if canUpload || sharedLink.assets.length > 1}
   <main class="isolate mx-4 mt-24 mb-40" bind:clientHeight={viewport.height} bind:clientWidth={viewport.width}>
     <SharedLinkFilters
       bind:filters
@@ -122,7 +143,7 @@
         {/snippet}
 
         {#snippet trailing()}
-          {#if sharedLink?.allowUpload}
+          {#if canUpload}
             <IconButton
               shape="round"
               color="secondary"

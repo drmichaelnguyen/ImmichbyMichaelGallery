@@ -37,20 +37,27 @@ export interface EditTool {
 }
 
 export class EditManager {
-  tools: EditTool[] = [
-    {
-      type: EditToolType.Transform,
-      icon: mdiCropRotate,
-      component: TransformTool,
-      manager: transformManager,
-    },
-    {
-      type: EditToolType.Color,
-      icon: mdiTune,
-      component: ColorTool,
-      manager: colorManager,
-    },
-  ];
+  /**
+   * Lazy getter: edit-manager ↔ TransformTool forms a circular module graph, so
+   * eagerly capturing `transformManager` in a class field can freeze `undefined`
+   * into `tools` (bundle init order). Resolve managers on access instead.
+   */
+  get tools(): EditTool[] {
+    return [
+      {
+        type: EditToolType.Transform,
+        icon: mdiCropRotate,
+        component: TransformTool,
+        manager: transformManager,
+      },
+      {
+        type: EditToolType.Color,
+        icon: mdiTune,
+        component: ColorTool,
+        manager: colorManager,
+      },
+    ];
+  }
 
   currentAsset = $state<AssetResponseDto | null>(null);
   selectedTool = $state<EditTool | null>(null);
@@ -100,17 +107,28 @@ export class EditManager {
     this.hasAppliedEdits = false;
     this.currentAsset = asset;
 
+    // Select Transform first so CropArea mounts before transformManager.onActivate runs.
+    this.selectedTool = this.tools[0];
+    const { tick } = await import('svelte');
+    await tick();
+
     for (const tool of this.tools) {
       await tool.manager.onActivate(asset, edits.edits);
     }
-
-    this.selectedTool = this.tools[0];
   }
 
-  selectTool(toolType: EditToolType) {
+  async selectTool(toolType: EditToolType) {
     const newTool = this.tools.find((t) => t.type === toolType);
-    if (newTool) {
-      this.selectedTool = newTool;
+    if (!newTool) {
+      return;
+    }
+
+    this.selectedTool = newTool;
+
+    if (toolType === EditToolType.Transform && this.currentAsset) {
+      const { tick } = await import('svelte');
+      await tick();
+      transformManager.relayout();
     }
   }
 
@@ -126,6 +144,8 @@ export class EditManager {
     const newTool = this.tools.find((t) => t.type === toolType);
     if (newTool) {
       this.selectedTool = newTool;
+      const { tick } = await import('svelte');
+      await tick();
       await newTool.manager.onActivate?.(asset, edits.edits);
     }
   }

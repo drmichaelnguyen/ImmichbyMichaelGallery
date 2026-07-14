@@ -164,12 +164,16 @@ export type Stack = {
 export type AuthSharedLink = {
   id: string;
   expiresAt: Date | null;
+  uploadExpiresAt: Date | null;
   userId: string;
   albumId: string | null;
   showExif: boolean;
   allowUpload: boolean;
   allowDownload: boolean;
   password: string | null;
+  uploadPassword: string | null;
+  /** Present on authenticated shared-link requests; true when uploads are unlocked. */
+  uploadUnlocked?: boolean;
 };
 
 export type SharedLink = {
@@ -182,8 +186,10 @@ export type SharedLink = {
   createdAt: Date;
   description: string | null;
   expiresAt: Date | null;
+  uploadExpiresAt: Date | null;
   key: Buffer;
   password: string | null;
+  uploadPassword: string | null;
   showExif: boolean;
   type: SharedLinkType;
   userId: string;

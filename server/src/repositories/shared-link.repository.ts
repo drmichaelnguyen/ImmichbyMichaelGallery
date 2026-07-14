@@ -162,10 +162,12 @@ export class SharedLinkRepository {
         'shared_link.userId',
         'shared_link.albumId',
         'shared_link.expiresAt',
+        'shared_link.uploadExpiresAt',
         'shared_link.showExif',
         'shared_link.allowUpload',
         'shared_link.allowDownload',
         'shared_link.password',
+        'shared_link.uploadPassword',
         jsonObjectFrom(
           eb.selectFrom('user').select(columns.authUser).whereRef('user.id', '=', 'shared_link.userId'),
         ).as('user'),

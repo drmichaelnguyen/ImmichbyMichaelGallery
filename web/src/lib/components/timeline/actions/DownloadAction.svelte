@@ -5,6 +5,7 @@
   import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { handleDownloadAsset } from '$lib/services/asset.service';
+  import { isMobileDownloadClient } from '$lib/utils';
   import { downloadArchive } from '$lib/utils/asset-utils';
   import { getAssetInfo } from '@immich/sdk';
   import { IconButton } from '@immich/ui';
@@ -19,15 +20,21 @@
   let { filename = 'immich.zip', menuItem = false }: Props = $props();
 
   const handleDownloadFiles = async () => {
-    const assets = assetMultiSelectManager.assets;
-    if (assets.length === 1) {
-      assetMultiSelectManager.clear();
-      let asset = await getAssetInfo({ ...authManager.params, id: assets[0].id });
-      await handleDownloadAsset(asset, { edited: true });
+    const assets = [...assetMultiSelectManager.assets];
+    assetMultiSelectManager.clear();
+
+    // On mobile, share each file so users can save to Photos/Gallery instead of a zip in Files.
+    if (assets.length === 1 || (isMobileDownloadClient() && assets.length <= 20)) {
+      for (const [index, selected] of assets.entries()) {
+        const asset = await getAssetInfo({ ...authManager.params, id: selected.id });
+        await handleDownloadAsset(asset, { edited: true });
+        if (index < assets.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+        }
+      }
       return;
     }
 
-    assetMultiSelectManager.clear();
     await downloadArchive(filename, { assetIds: assets.map((asset) => asset.id) });
   };
 </script>

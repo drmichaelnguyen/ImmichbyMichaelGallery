@@ -312,19 +312,222 @@ const jsonReplacer = (_key: string, value: unknown) =>
         }, {})
     : value;
 
+export const downloadBlob = (data: Blob, filename: string) => {
+  if (!(data instanceof Blob) || data.size === 0) {
+    throw new TypeError('Cannot download empty file');
+  }
+
+  const url = URL.createObjectURL(data);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.rel = 'noopener';
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+};
+
+/**
+ * Re-encode through canvas to a phone-safe sRGB JPEG.
+ * Fixes gray/dark Photos imports from WebP-as-.jpg, wide-gamut, or odd Content-Types.
+ */
+export const normalizeImageBlobToJpeg = async (data: Blob, quality = 0.92): Promise<Blob> => {
+  if (!(data instanceof Blob) || data.size === 0) {
+    throw new TypeError('Cannot normalize empty image');
+  }
+
+  const bitmap = await createImageBitmap(data);
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      throw new TypeError('Canvas is unavailable');
+    }
+    context.drawImage(bitmap, 0, 0);
+
+    const jpeg = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new TypeError('JPEG encode failed'))),
+        'image/jpeg',
+        quality,
+      );
+    });
+
+    if (jpeg.size === 0) {
+      throw new TypeError('JPEG encode produced an empty file');
+    }
+
+    return jpeg;
+  } finally {
+    bitmap.close();
+  }
+};
+
+/**
+ * Prefer downloadRequest + downloadBlob. Direct `<a download>` against Immich's
+ * Content-Disposition: inline originals often produces empty (0 KB) files in Safari/Chromium.
+ */
 export const downloadUrl = (url: string, filename: string) => {
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = filename;
+  anchor.rel = 'noopener';
 
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
-
-  URL.revokeObjectURL(url);
 };
 
-export const downloadBlob = (data: Blob, filename: string) => downloadUrl(URL.createObjectURL(data), filename);
+const RAW_EXTENSIONS = new Set([
+  '3fr',
+  'arw',
+  'cr2',
+  'cr3',
+  'dng',
+  'fff',
+  'iiq',
+  'kdc',
+  'mdc',
+  'mef',
+  'mos',
+  'mrw',
+  'nef',
+  'nrw',
+  'orf',
+  'pef',
+  'raf',
+  'raw',
+  'rw2',
+  'sr2',
+  'srf',
+  'srw',
+  'x3f',
+]);
+
+export const isRawDownloadFilename = (filename: string) => {
+  const extension = filename.split('.').pop()?.toLowerCase();
+  return !!extension && RAW_EXTENSIONS.has(extension);
+};
+
+const guessMimeType = (filename: string, fallback = 'application/octet-stream') => {
+  const extension = filename.split('.').pop()?.toLowerCase();
+  switch (extension) {
+    case 'jpg':
+    case 'jpeg': {
+      return 'image/jpeg';
+    }
+    case 'png': {
+      return 'image/png';
+    }
+    case 'gif': {
+      return 'image/gif';
+    }
+    case 'webp': {
+      return 'image/webp';
+    }
+    case 'heic': {
+      return 'image/heic';
+    }
+    case 'heif': {
+      return 'image/heif';
+    }
+    case 'tif':
+    case 'tiff': {
+      return 'image/tiff';
+    }
+    case 'mp4': {
+      return 'video/mp4';
+    }
+    case 'mov': {
+      return 'video/quicktime';
+    }
+    case 'm4v': {
+      return 'video/x-m4v';
+    }
+    case 'webm': {
+      return 'video/webm';
+    }
+    case 'nef': {
+      return 'image/x-nikon-nef';
+    }
+    case 'dng': {
+      return 'image/x-adobe-dng';
+    }
+    default: {
+      return fallback;
+    }
+  }
+};
+
+/** Photos/Gallery can typically accept these via the share sheet — not RAW. */
+export const isGalleryShareableFilename = (filename: string) => {
+  if (isRawDownloadFilename(filename)) {
+    return false;
+  }
+
+  const mime = guessMimeType(filename);
+  return mime.startsWith('image/') || mime.startsWith('video/');
+};
+
+/** True for phones/tablets where browser downloads usually land in Files, not Photos/Gallery. */
+export const isMobileDownloadClient = () => {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+
+  const ua = navigator.userAgent;
+  if (/Android|iPhone|iPod|Mobile/i.test(ua)) {
+    return true;
+  }
+
+  // iPadOS reports as Macintosh but is touch-first.
+  return navigator.maxTouchPoints > 1 && /Macintosh/i.test(ua);
+};
+
+const canShareFiles = (files: File[]) => {
+  if (typeof navigator === 'undefined' || typeof navigator.share !== 'function') {
+    return false;
+  }
+  // Some mobile browsers omit canShare or lie; treat missing canShare as ok.
+  if (typeof navigator.canShare !== 'function') {
+    return true;
+  }
+  return navigator.canShare({ files });
+};
+
+/**
+ * On phones, save via the system share sheet (Save Image / Save Video → gallery).
+ * Share must run from a user gesture; after fetching the file we show a one-tap
+ * Save to Photos confirm so iOS/Android still allow the share sheet.
+ * Desktop / non-shareable files use a normal download.
+ */
+export const shareOrDownloadBlob = async (data: Blob, filename: string) => {
+  if (!(data instanceof Blob) || data.size === 0) {
+    throw new TypeError('Cannot download empty file');
+  }
+
+  const type = data.type && data.type !== 'application/octet-stream' ? data.type : guessMimeType(filename, data.type);
+  const typedBlob = type && type !== data.type ? new Blob([data], { type }) : data;
+
+  if (isRawDownloadFilename(filename) || !isGalleryShareableFilename(filename)) {
+    downloadBlob(typedBlob, filename);
+    return;
+  }
+
+  const file = new File([typedBlob], filename, { type: type || 'application/octet-stream' });
+
+  if (isMobileDownloadClient() && canShareFiles([file])) {
+    const { modalManager } = await import('@immich/ui');
+    const SaveToPhotosModal = (await import('$lib/modals/SaveToPhotosModal.svelte')).default;
+    await modalManager.show(SaveToPhotosModal, { file, filename });
+    return;
+  }
+
+  downloadBlob(typedBlob, filename);
+};
 
 export const downloadJson = (data: unknown, filename: string) => {
   const blob = new Blob([JSON.stringify(data, jsonReplacer, 2)], { type: 'application/json' });

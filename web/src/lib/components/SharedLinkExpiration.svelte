@@ -6,9 +6,11 @@
 
   type Props = {
     expiresAt: string | null;
+    label?: string;
+    description?: string;
   };
 
-  let { expiresAt = $bindable() }: Props = $props();
+  let { expiresAt = $bindable(), label, description }: Props = $props();
 
   const expirationOptions: [number, Intl.RelativeTimeFormatUnit][] = [
     [1, 'day'],
@@ -34,7 +36,7 @@
   };
 
   const setSelectedDate = (value: DateTime | undefined) => {
-    selectedPresetValue = null; // Clear preset when manually setting date
+    selectedPresetValue = null;
     expiresAt = value ? value.toUTC().toISO() : null;
   };
 
@@ -54,7 +56,7 @@
 </script>
 
 <div class="mt-2">
-  <Field label={$t('expire_after')}>
+  <Field label={label ?? $t('expire_after')} {description}>
     <DatePicker bind:value={getSelectedDate, setSelectedDate} />
   </Field>
 

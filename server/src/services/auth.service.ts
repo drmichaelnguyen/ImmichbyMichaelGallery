@@ -252,11 +252,11 @@ export class AuthService extends BaseService {
     const apiKey = (headers[ImmichHeader.ApiKey] || queryParams[ImmichQuery.ApiKey]) as string;
 
     if (shareKey) {
-      return this.validateSharedLinkKey(shareKey);
+      return this.validateSharedLinkKey(shareKey, headers);
     }
 
     if (shareSlug) {
-      return this.validateSharedLinkSlug(shareSlug);
+      return this.validateSharedLinkSlug(shareSlug, headers);
     }
 
     if (session) {
@@ -484,7 +484,7 @@ export class AuthService extends BaseService {
     return cookies[ImmichCookie.OAuthCodeVerifier] || null;
   }
 
-  async validateSharedLinkKey(key: string | string[]): Promise<AuthDto> {
+  async validateSharedLinkKey(key: string | string[], headers: IncomingHttpHeaders = {}): Promise<AuthDto> {
     key = Array.isArray(key) ? key[0] : key;
 
     const bytes = Buffer.from(key, key.length === 100 ? 'hex' : 'base64url');
@@ -493,10 +493,10 @@ export class AuthService extends BaseService {
       throw new UnauthorizedException('Invalid share key');
     }
 
-    return { user: sharedLink.user, sharedLink };
+    return { user: sharedLink.user, sharedLink: this.toAuthSharedLink(sharedLink, headers) };
   }
 
-  async validateSharedLinkSlug(slug: string | string[]): Promise<AuthDto> {
+  async validateSharedLinkSlug(slug: string | string[], headers: IncomingHttpHeaders = {}): Promise<AuthDto> {
     slug = Array.isArray(slug) ? slug[0] : slug;
 
     const sharedLink = await this.sharedLinkRepository.getBySlug(slug);
@@ -504,12 +504,66 @@ export class AuthService extends BaseService {
       throw new UnauthorizedException('Invalid share slug');
     }
 
-    return { user: sharedLink.user, sharedLink };
+    return { user: sharedLink.user, sharedLink: this.toAuthSharedLink(sharedLink, headers) };
+  }
+
+  private toAuthSharedLink(
+    sharedLink: {
+      id: string;
+      expiresAt: Date | null;
+      uploadExpiresAt: Date | null;
+      userId: string;
+      albumId: string | null;
+      showExif: boolean;
+      allowUpload: boolean;
+      allowDownload: boolean;
+      password: string | null;
+      uploadPassword: string | null;
+      user: AuthUser;
+    },
+    headers: IncomingHttpHeaders,
+  ): AuthSharedLink {
+    const uploadPassword = sharedLink.uploadPassword ?? null;
+    return {
+      id: sharedLink.id,
+      expiresAt: sharedLink.expiresAt,
+      uploadExpiresAt: sharedLink.uploadExpiresAt,
+      userId: sharedLink.userId,
+      albumId: sharedLink.albumId,
+      showExif: sharedLink.showExif,
+      allowUpload: sharedLink.allowUpload,
+      allowDownload: sharedLink.allowDownload,
+      password: sharedLink.password,
+      uploadPassword,
+      uploadUnlocked: !uploadPassword || this.hasSharedLinkUploadToken(headers, sharedLink.id, uploadPassword),
+    };
+  }
+
+  private hasSharedLinkUploadToken(headers: IncomingHttpHeaders, id: string, uploadPassword: string): boolean {
+    const cookies = parse(headers.cookie || '');
+    const tokens = cookies[ImmichCookie.SharedLinkUploadToken]?.split(',') || [];
+    const expected = this.cryptoRepository.hashSha256(`${id}-upload-${uploadPassword}`).toString('base64');
+    return tokens.includes(expected);
   }
 
   private isValidSharedLink(
-    sharedLink?: AuthSharedLink & { user: AuthUser | null },
-  ): sharedLink is AuthSharedLink & { user: AuthUser } {
+    sharedLink?: {
+      user: AuthUser | null;
+      expiresAt: Date | null;
+    },
+  ): sharedLink is {
+    user: AuthUser;
+    expiresAt: Date | null;
+    id: string;
+    uploadExpiresAt: Date | null;
+    userId: string;
+    albumId: string | null;
+    showExif: boolean;
+    allowUpload: boolean;
+    allowDownload: boolean;
+    password: string | null;
+    uploadPassword: string | null;
+  } {
     return !!sharedLink?.user && (!sharedLink.expiresAt || new Date(sharedLink.expiresAt) > new Date());
   }
 

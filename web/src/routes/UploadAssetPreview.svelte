@@ -93,17 +93,32 @@
   </div>
 
   {#if uploadAsset.state === UploadState.STARTED}
-    <div class="relative mt-[5px] h-4.5 w-full rounded-md bg-gray-300 text-black dark:bg-gray-700">
-      <div class="h-4.5 rounded-md bg-immich-primary transition-all" style={`width: ${uploadAsset.progress}%`}></div>
-      <p class="absolute top-0.5 size-full text-center text-[10px] text-white">
+    <div class="relative mt-[5px] h-4.5 w-full overflow-hidden rounded-md bg-gray-300 text-black dark:bg-gray-700">
+      <div
+        class="h-4.5 rounded-md bg-immich-primary transition-all duration-150"
+        style={`width: ${Math.max(uploadAsset.progress || 0, 2)}%`}
+      ></div>
+      <p class="absolute top-0.5 size-full text-center text-[10px] font-medium text-white">
         {#if uploadAsset.message === $t('asset_hashing')}
           {uploadAsset.message}
         {:else}
-          {uploadAsset.message}
-          {uploadAsset.progress}% - {getByteUnitString(uploadAsset.speed || 0, $locale)}/s - {uploadAsset.eta}s
+          {uploadAsset.message ?? $t('asset_uploading')}
+          {uploadAsset.progress ?? 0}%
+          {#if uploadAsset.speed}
+            - {getByteUnitString(uploadAsset.speed, $locale)}/s
+          {/if}
+          {#if uploadAsset.eta}
+            - {uploadAsset.eta}s
+          {/if}
         {/if}
       </p>
     </div>
+  {:else if uploadAsset.state === UploadState.DONE}
+    <p class="text-[11px] font-medium text-success">{$t('asset_uploaded')}</p>
+  {:else if uploadAsset.state === UploadState.DUPLICATED}
+    <p class="text-[11px] font-medium text-warning">
+      {uploadAsset.isTrashed ? $t('asset_skipped_in_trash') : $t('asset_skipped')}
+    </p>
   {/if}
 
   {#if uploadAsset.state === UploadState.ERROR}

@@ -540,7 +540,9 @@
   <div
     data-viewer-content
     class={[
-      'relative z-[-1] col-span-4 col-start-1 row-span-full row-start-1 transition-[padding] duration-200',
+      'relative col-span-4 col-start-1 row-span-full row-start-1 transition-[padding] duration-200',
+      // Keep crop handles clickable while editing; otherwise sit behind chrome.
+      assetViewerManager.isShowEditor ? 'z-0' : 'z-[-1]',
       isMobileEditor && 'pb-[var(--editor-inset)]',
     ]}
     style:--editor-inset={mobileEditorInset}

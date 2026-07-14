@@ -2191,12 +2191,18 @@ export type SharedLinkResponseDto = {
     description: string | null;
     /** Expiration date */
     expiresAt: string | null;
+    /** Upload contribution window expiration */
+    uploadExpiresAt: string | null;
     /** Shared link ID */
     id: string;
     /** Encryption key (base64url) */
     key: string;
     /** Has password */
     password: string | null;
+    /** Upload password (owners only; null for public viewers) */
+    uploadPassword: string | null;
+    /** Whether contributing requires an upload password */
+    hasUploadPassword: boolean;
     /** Show metadata */
     showMetadata: boolean;
     /** Custom URL slug */
@@ -2218,8 +2224,12 @@ export type SharedLinkCreateDto = {
     description?: string | null;
     /** Expiration date */
     expiresAt?: string | null;
+    /** Upload contribution window expiration */
+    uploadExpiresAt?: string | null;
     /** Link password */
     password?: string | null;
+    /** Password required to upload contributions */
+    uploadPassword?: string | null;
     /** Show metadata */
     showMetadata?: boolean;
     /** Custom URL slug */
@@ -2239,8 +2249,12 @@ export type SharedLinkEditDto = {
     description?: string | null;
     /** Expiration date */
     expiresAt?: string | null;
+    /** Upload contribution window expiration */
+    uploadExpiresAt?: string | null;
     /** Link password */
     password?: string | null;
+    /** Password required to upload contributions */
+    uploadPassword?: string | null;
     /** Show metadata */
     showMetadata?: boolean;
     /** Custom URL slug */
@@ -4313,6 +4327,9 @@ export function renderAssetEdits({ id, key, slug, assetEditsCreateDto }: {
     return oazapfts.ok(oazapfts.fetchBlob<{
         status: 200;
         data: Blob;
+    } | {
+        status: 201;
+        data: Blob;
     }>(`/assets/${encodeURIComponent(id)}/edits/render${QS.query(QS.explode({
         key,
         slug
@@ -6179,6 +6196,26 @@ export function sharedLinkLogin({ key, slug, sharedLinkLoginDto }: {
         status: 201;
         data: SharedLinkResponseDto;
     }>(`/shared-links/login${QS.query(QS.explode({
+        key,
+        slug
+    }))}`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: sharedLinkLoginDto
+    })));
+}
+/**
+ * Shared link upload login
+ */
+export function sharedLinkUploadLogin({ key, slug, sharedLinkLoginDto }: {
+    key?: string;
+    slug?: string;
+    sharedLinkLoginDto: SharedLinkLoginDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: SharedLinkResponseDto;
+    }>(`/shared-links/upload-login${QS.query(QS.explode({
         key,
         slug
     }))}`, oazapfts.json({

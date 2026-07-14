@@ -21,8 +21,8 @@
   import { getAlbumAssetActions } from '$lib/services/album.service';
   import { getGlobalActions } from '$lib/services/app.service';
   import { getAssetActions } from '$lib/services/asset.service';
-import { preferUnenhancedSharedThumbnails } from '$lib/stores/preferences.store';
-  import { getSharedLink, withoutIcons } from '$lib/utils';
+  import { preferUnenhancedSharedThumbnails } from '$lib/stores/preferences.store';
+  import { getSharedLink, isEnabled, withoutIcons } from '$lib/utils';
   import type { OnUndoDelete } from '$lib/utils/actions';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
   import {
@@ -33,8 +33,8 @@ import { preferUnenhancedSharedThumbnails } from '$lib/stores/preferences.store'
     type PersonResponseDto,
     type StackResponseDto,
   } from '@immich/sdk';
-  import { ActionButton, CommandPaletteDefaultProvider, Tooltip, type ActionItem } from '@immich/ui';
-  import { mdiArrowLeft, mdiArrowRight, mdiDotsVertical, mdiVideoOutline } from '@mdi/js';
+  import { ActionButton, CommandPaletteDefaultProvider, Icon, Tooltip, type ActionItem } from '@immich/ui';
+  import { mdiArrowLeft, mdiArrowRight, mdiDotsVertical, mdiTune, mdiVideoOutline } from '@mdi/js';
   import { t } from 'svelte-i18n';
 
   interface Props {
@@ -88,6 +88,7 @@ import { preferUnenhancedSharedThumbnails } from '$lib/stores/preferences.store'
 
   const Actions = $derived(getAssetActions($t, { ...asset, stackPrimaryAssetId: stack?.primaryAssetId }));
   const sharedLink = getSharedLink();
+  const showEdit = $derived(Actions.Edit.$if?.() ?? true);
 </script>
 
 <CommandPaletteDefaultProvider name={$t('assets')} actions={withoutIcons([Close, Cast, ...Object.values(Actions)])} />
@@ -120,19 +121,46 @@ import { preferUnenhancedSharedThumbnails } from '$lib/stores/preferences.store'
     <ActionButton action={Actions.PlayMotionPhoto} />
     <ActionButton action={Actions.StopMotionPhoto} />
     <ActionButton action={Actions.Copy} />
-    <ActionButton action={Actions.SharedLinkDownload} />
-    <ActionButton action={Actions.SharedLinkDownloadOriginal} />
-    {#if sharedLink}
+    {#if isEnabled(Actions.SharedLinkDownload) || isEnabled(Actions.SharedLinkDownloadOriginal)}
+      <div class="flex items-center gap-1">
+        {#if isEnabled(Actions.SharedLinkDownload)}
+          <button
+            type="button"
+            class="inline-flex items-center rounded-full border border-white/50 bg-white/20 px-2.5 py-1 text-[11px] font-bold tracking-wide text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-white/35"
+            aria-label={$t('download') + ' ' + Actions.SharedLinkDownload.title}
+            title={$t('download') + ' ' + Actions.SharedLinkDownload.title}
+            onclick={() => Actions.SharedLinkDownload.onAction()}
+          >
+            {Actions.SharedLinkDownload.title}
+          </button>
+        {/if}
+        {#if isEnabled(Actions.SharedLinkDownloadOriginal)}
+          <button
+            type="button"
+            class="inline-flex items-center rounded-full border border-amber-200/70 bg-amber-500/30 px-2.5 py-1 text-[11px] font-bold tracking-wide text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-amber-500/45"
+            aria-label={$t('download') + ' ' + Actions.SharedLinkDownloadOriginal.title}
+            title={$t('download') + ' ' + Actions.SharedLinkDownloadOriginal.title}
+            onclick={() => Actions.SharedLinkDownloadOriginal.onAction()}
+          >
+            {Actions.SharedLinkDownloadOriginal.title}
+          </button>
+        {/if}
+      </div>
+    {/if}
+
+    {#if showEdit}
       <button
         type="button"
-        class="rounded-full border border-white/30 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-white/20"
-        aria-label={$t('toggle_shared_standard_previews')}
-        title={$t('toggle_shared_standard_previews')}
-        onclick={() => ($preferUnenhancedSharedThumbnails = !$preferUnenhancedSharedThumbnails)}
+        class="inline-flex items-center gap-1.5 rounded-full border border-white/50 bg-white/20 px-3 py-1.5 text-xs font-semibold text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-white/35"
+        aria-label={$t('editor')}
+        title={$t('editor')}
+        onclick={() => Actions.Edit.onAction()}
       >
-        {$preferUnenhancedSharedThumbnails ? $t('view_mode_standard') : $t('view_mode_enhanced')}
+        <Icon icon={mdiTune} size="16" />
+        {$t('editor')}
       </button>
     {/if}
+
     <ActionButton action={Actions.Info} />
     <ActionButton action={Actions.Favorite} />
     <ActionButton action={Actions.Unfavorite} />
@@ -140,8 +168,6 @@ import { preferUnenhancedSharedThumbnails } from '$lib/stores/preferences.store'
     {#if isOwner}
       <RatingAction {asset} {onAction} />
     {/if}
-
-    <ActionButton action={Actions.Edit} />
 
     {#if isOwner}
       <DeleteAction {asset} {onAction} {preAction} {onUndoDelete} />
@@ -206,6 +232,18 @@ import { preferUnenhancedSharedThumbnails } from '$lib/stores/preferences.store'
           <ActionMenuItem action={Actions.TranscodeVideoJob} />
         {/if}
       </ButtonContextMenu>
+    {/if}
+
+    {#if sharedLink}
+      <button
+        type="button"
+        class="rounded-full border border-white/30 px-3 py-1 text-xs font-medium text-white transition-colors hover:bg-white/20"
+        aria-label={$t('toggle_shared_standard_previews')}
+        title={$t('toggle_shared_standard_previews')}
+        onclick={() => ($preferUnenhancedSharedThumbnails = !$preferUnenhancedSharedThumbnails)}
+      >
+        {$preferUnenhancedSharedThumbnails ? $t('view_mode_standard') : $t('view_mode_enhanced')}
+      </button>
     {/if}
   </div>
 </div>

@@ -27,8 +27,26 @@ export type AccessRequest = {
 type SharedLinkAccessRequest = { sharedLink: AuthSharedLink; permission: Permission; ids: Set<string> };
 type OtherAccessRequest = { auth: AuthDto; permission: Permission; ids: Set<string> };
 
+export const canUploadToSharedLink = (
+  sharedLink: Pick<AuthSharedLink, 'allowUpload' | 'uploadExpiresAt' | 'uploadPassword' | 'uploadUnlocked'>,
+): boolean => {
+  if (!sharedLink.allowUpload) {
+    return false;
+  }
+
+  if (sharedLink.uploadExpiresAt && new Date(sharedLink.uploadExpiresAt) <= new Date()) {
+    return false;
+  }
+
+  if (sharedLink.uploadPassword && !sharedLink.uploadUnlocked) {
+    return false;
+  }
+
+  return true;
+};
+
 export const requireUploadAccess = (auth: AuthDto | null): AuthDto => {
-  if (!auth || (auth.sharedLink && !auth.sharedLink.allowUpload)) {
+  if (!auth || (auth.sharedLink && !canUploadToSharedLink(auth.sharedLink))) {
     throw new UnauthorizedException();
   }
   return auth;
@@ -76,7 +94,7 @@ const checkSharedLinkAccess = async (
     }
 
     case Permission.AssetUpload: {
-      return sharedLink.allowUpload ? ids : new Set();
+      return canUploadToSharedLink(sharedLink) ? ids : new Set();
     }
 
     case Permission.AlbumRead: {
@@ -88,7 +106,7 @@ const checkSharedLinkAccess = async (
     }
 
     case Permission.AlbumAssetCreate: {
-      return sharedLink.allowUpload ? await access.album.checkSharedLinkAccess(sharedLinkId, ids) : new Set();
+      return canUploadToSharedLink(sharedLink) ? await access.album.checkSharedLinkAccess(sharedLinkId, ids) : new Set();
     }
 
     default: {

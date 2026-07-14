@@ -38,8 +38,8 @@ const getAuthTokens = (cookies: Record<string, string> | undefined) => {
   return cookies?.[ImmichCookie.SharedLinkToken]?.split(',') || [];
 };
 
-const merge = (cookies: Record<string, string> | undefined, token: string) => {
-  const authTokens = getAuthTokens(cookies);
+const merge = (cookies: Record<string, string> | undefined, cookieName: ImmichCookie, token: string) => {
+  const authTokens = (cookies?.[cookieName]?.split(',') || []).filter(Boolean);
   if (!authTokens.includes(token)) {
     authTokens.push(token);
   }
@@ -84,7 +84,34 @@ export class SharedLinkController {
 
     return respondWithCookie(res, sharedLink, {
       isSecure: loginDetails.isSecure,
-      values: [{ key: ImmichCookie.SharedLinkToken, value: merge(req.cookies, token) }],
+      values: [{ key: ImmichCookie.SharedLinkToken, value: merge(req.cookies, ImmichCookie.SharedLinkToken, token) }],
+    });
+  }
+
+  @Post('upload-login')
+  @Authenticated({ sharedLink: true })
+  @Endpoint({
+    summary: 'Shared link upload login',
+    description: 'Unlock uploads on a shared link that requires an upload password',
+    history: new HistoryBuilder().added('v3.0.0').beta('v3.0.0'),
+  })
+  async sharedLinkUploadLogin(
+    @Auth() auth: AuthDto,
+    @Body() dto: SharedLinkLoginDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+    @GetLoginDetails() loginDetails: LoginDetails,
+  ): Promise<SharedLinkResponseDto> {
+    const { sharedLink, token } = await this.service.uploadLogin(auth, dto);
+
+    return respondWithCookie(res, sharedLink, {
+      isSecure: loginDetails.isSecure,
+      values: [
+        {
+          key: ImmichCookie.SharedLinkUploadToken,
+          value: merge(req.cookies, ImmichCookie.SharedLinkUploadToken, token),
+        },
+      ],
     });
   }
 

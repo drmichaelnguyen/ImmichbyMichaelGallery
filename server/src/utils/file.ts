@@ -61,7 +61,7 @@ export const sendFile = async (
       res.set('Cache-Control', cacheControlHeader);
     }
 
-    res.header('Content-Type', file.contentType);
+      res.header('Content-Type', file.contentType);
     if (file.fileName) {
       res.header('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(file.fileName)}`);
     }
