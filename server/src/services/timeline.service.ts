@@ -26,7 +26,7 @@ export class TimelineService extends BaseService {
   }
 
   private async buildTimeBucketOptions(auth: AuthDto, dto: TimeBucketDto): Promise<TimeBucketOptions> {
-    const { userId, ...options } = dto;
+    const { userId, takenAfter, takenBefore, ...options } = dto;
     let userIds: string[] | undefined;
 
     if (userId) {
@@ -41,7 +41,14 @@ export class TimelineService extends BaseService {
       }
     }
 
-    return { ...options, userIds };
+    return {
+      ...options,
+      userIds,
+      takenAfter: takenAfter ? new Date(takenAfter) : undefined,
+      takenBefore: takenBefore
+        ? new Date(new Date(takenBefore).getTime() + 24 * 60 * 60 * 1000)
+        : undefined,
+    };
   }
 
   private async timeBucketChecks(auth: AuthDto, dto: TimeBucketDto) {

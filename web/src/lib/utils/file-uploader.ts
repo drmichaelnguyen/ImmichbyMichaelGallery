@@ -22,8 +22,13 @@ import { handleError } from './handle-error';
 
 export const uploadExecutionQueue = new ExecutorQueue({ concurrency: 2 });
 
+export type GuestContributorInfo = {
+  name: string;
+  email: string;
+};
+
 type FilePickerParam = { multiple?: boolean; extensions?: string[] };
-type FileUploadParam = { multiple?: boolean; albumId?: string };
+type FileUploadParam = { multiple?: boolean; albumId?: string; contributor?: GuestContributorInfo };
 
 export const openFilePicker = async (options: FilePickerParam = {}) => {
   const { multiple = true, extensions } = options;
@@ -69,14 +74,14 @@ export const openFilePicker = async (options: FilePickerParam = {}) => {
 };
 
 export const openFileUploadDialog = async (options: FileUploadParam = {}) => {
-  const { albumId, multiple = true } = options;
+  const { albumId, multiple = true, contributor } = options;
   const extensions = uploadManager.getExtensions();
   const files = await openFilePicker({
     multiple,
     extensions,
   });
 
-  return fileUploadHandler({ files, albumId });
+  return fileUploadHandler({ files, albumId, contributor });
 };
 
 type FileUploadHandlerParams = Omit<FileUploaderParams, 'deviceAssetId' | 'assetFile'> & {
@@ -87,6 +92,7 @@ export const fileUploadHandler = async ({
   files,
   albumId,
   isLockedAssets = false,
+  contributor,
 }: FileUploadHandlerParams): Promise<string[]> => {
   const extensions = uploadManager.getExtensions();
   const promises = [];
@@ -96,7 +102,9 @@ export const fileUploadHandler = async ({
       const deviceAssetId = getDeviceAssetId(file);
       uploadAssetsStore.addItem({ id: deviceAssetId, file, albumId });
       promises.push(
-        uploadExecutionQueue.addTask(() => fileUploader({ deviceAssetId, assetFile: file, albumId, isLockedAssets })),
+        uploadExecutionQueue.addTask(() =>
+          fileUploader({ deviceAssetId, assetFile: file, albumId, isLockedAssets, contributor }),
+        ),
       );
     } else {
       toastManager.warning(get(t)('unsupported_file_type', { values: { file: file.name, type: file.type } }), {
@@ -142,6 +150,7 @@ type FileUploaderParams = {
   albumId?: string;
   replaceAssetId?: string;
   isLockedAssets?: boolean;
+  contributor?: GuestContributorInfo;
   // TODO rework the asset uploader and remove this
   deviceAssetId: string;
 };
@@ -152,6 +161,7 @@ async function fileUploader({
   deviceAssetId,
   albumId,
   isLockedAssets = false,
+  contributor,
 }: FileUploaderParams): Promise<string | undefined> {
   const fileCreatedAt = new Date(assetFile.lastModified).toISOString();
   const $t = get(t);
@@ -172,6 +182,18 @@ async function fileUploader({
 
     if (isLockedAssets) {
       formData.append('visibility', AssetVisibility.Locked);
+    }
+
+    if (contributor) {
+      formData.append(
+        'metadata',
+        JSON.stringify([
+          {
+            key: 'guest-contributor',
+            value: { name: contributor.name, email: contributor.email },
+          },
+        ]),
+      );
     }
 
     let responseData: { id: string; status: AssetMediaStatus; isTrashed?: boolean } | undefined;
@@ -229,13 +251,10 @@ async function fileUploader({
       state: responseData.status === AssetMediaStatus.Duplicate ? UploadState.DUPLICATED : UploadState.DONE,
       assetId: responseData.id,
       isTrashed: responseData.isTrashed,
+      message:
+        responseData.status === AssetMediaStatus.Duplicate ? $t('asset_skipped') : $t('asset_uploaded'),
+      progress: 100,
     });
-
-    if (responseData.status !== AssetMediaStatus.Duplicate) {
-      setTimeout(() => {
-        uploadAssetsStore.removeItem(deviceAssetId);
-      }, 1000);
-    }
 
     return responseData.id;
   } catch (error) {

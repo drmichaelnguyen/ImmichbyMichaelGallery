@@ -534,7 +534,29 @@ describe(AssetMediaService.name, () => {
       );
     });
 
-    it('should not return the unedited version if requested using a shared link', async () => {
+    it('should return the unedited version when requested using a shared link', async () => {
+      const editedAsset = AssetFactory.from().edit().build();
+
+      mocks.access.asset.checkSharedLinkAccess.mockResolvedValue(new Set([editedAsset.id]));
+      mocks.asset.getForOriginal.mockResolvedValue({
+        ...editedAsset,
+        originalPath: editedAsset.originalPath,
+        editedPath: undefined,
+      });
+
+      await expect(
+        sut.downloadOriginal(AuthFactory.from().sharedLink().build(), editedAsset.id, { edited: false }),
+      ).resolves.toEqual(
+        new ImmichFileResponse({
+          path: editedAsset.originalPath,
+          fileName: editedAsset.originalFileName,
+          contentType: 'image/jpeg',
+          cacheControl: CacheControl.PrivateWithCache,
+        }),
+      );
+    });
+
+    it('should download edited file for shared links when edited=true', async () => {
       const fullsizeEdited = AssetFileFactory.create({ type: AssetFileType.FullSize, isEdited: true });
       const editedAsset = AssetFactory.from().edit({ action: AssetEditAction.Crop }).file(fullsizeEdited).build();
 
@@ -542,7 +564,7 @@ describe(AssetMediaService.name, () => {
       mocks.asset.getForOriginal.mockResolvedValue({ ...editedAsset, editedPath: fullsizeEdited.path });
 
       await expect(
-        sut.downloadOriginal(AuthFactory.from().sharedLink().build(), editedAsset.id, { edited: false }),
+        sut.downloadOriginal(AuthFactory.from().sharedLink().build(), editedAsset.id, { edited: true }),
       ).resolves.toEqual(
         new ImmichFileResponse({
           path: fullsizeEdited.path,
@@ -610,6 +632,7 @@ describe(AssetMediaService.name, () => {
           fileName: `IMG_${asset.id}_preview.jpg`,
         }),
       );
+      expect(mocks.asset.getForThumbnail).toHaveBeenCalledWith(asset.id, AssetFileType.PreviewEnhanced, false);
     });
 
     it('should get thumbnail file', async () => {
@@ -626,7 +649,7 @@ describe(AssetMediaService.name, () => {
           fileName: `IMG_${asset.id}_thumbnail.ext`,
         }),
       );
-      expect(mocks.asset.getForThumbnail).toHaveBeenCalledWith(asset.id, AssetFileType.Thumbnail, false);
+      expect(mocks.asset.getForThumbnail).toHaveBeenCalledWith(asset.id, AssetFileType.ThumbnailEnhanced, false);
     });
 
     it('should get original thumbnail by default', async () => {
@@ -634,6 +657,42 @@ describe(AssetMediaService.name, () => {
       mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
       mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: asset.files[0].path });
       await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL })).resolves.toEqual(
+        new ImmichFileResponse({
+          path: asset.files[0].path,
+          cacheControl: CacheControl.PrivateWithCache,
+          contentType: 'image/jpeg',
+          fileName: `IMG_${asset.id}_thumbnail.jpg`,
+        }),
+      );
+      expect(mocks.asset.getForThumbnail).toHaveBeenCalledWith(asset.id, AssetFileType.ThumbnailEnhanced, false);
+    });
+
+    it('should fall back to standard thumbnail when enhanced file is missing', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Thumbnail }).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForThumbnail
+        .mockResolvedValueOnce({ ...asset, path: undefined as unknown as string })
+        .mockResolvedValueOnce({ ...asset, path: asset.files[0].path });
+
+      await expect(sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL })).resolves.toEqual(
+        new ImmichFileResponse({
+          path: asset.files[0].path,
+          cacheControl: CacheControl.PrivateWithCache,
+          contentType: 'image/jpeg',
+          fileName: `IMG_${asset.id}_thumbnail.jpg`,
+        }),
+      );
+      expect(mocks.asset.getForThumbnail).toHaveBeenNthCalledWith(1, asset.id, AssetFileType.ThumbnailEnhanced, false);
+      expect(mocks.asset.getForThumbnail).toHaveBeenNthCalledWith(2, asset.id, AssetFileType.Thumbnail, false);
+    });
+
+    it('should use standard thumbnail when unenhanced=true', async () => {
+      const asset = AssetFactory.from().file({ type: AssetFileType.Thumbnail }).build();
+      mocks.access.asset.checkOwnerAccess.mockResolvedValue(new Set([asset.id]));
+      mocks.asset.getForThumbnail.mockResolvedValue({ ...asset, path: asset.files[0].path });
+      await expect(
+        sut.viewThumbnail(authStub.admin, asset.id, { size: AssetMediaSize.THUMBNAIL, unenhanced: true }),
+      ).resolves.toEqual(
         new ImmichFileResponse({
           path: asset.files[0].path,
           cacheControl: CacheControl.PrivateWithCache,
@@ -675,7 +734,7 @@ describe(AssetMediaService.name, () => {
           fileName: `IMG_${asset.id}_thumbnail.jpg`,
         }),
       );
-      expect(mocks.asset.getForThumbnail).toHaveBeenCalledWith(asset.id, AssetFileType.Thumbnail, false);
+      expect(mocks.asset.getForThumbnail).toHaveBeenCalledWith(asset.id, AssetFileType.ThumbnailEnhanced, false);
     });
 
     it('should not return the unedited version if requested using a shared link', async () => {

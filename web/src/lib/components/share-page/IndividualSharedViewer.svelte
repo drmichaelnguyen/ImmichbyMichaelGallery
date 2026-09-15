@@ -1,6 +1,7 @@
 <script lang="ts">
   import { goto } from '$app/navigation';
   import type { Action } from '$lib/components/asset-viewer/actions/action';
+  import SharedLinkFilters from '$lib/components/share-page/SharedLinkFilters.svelte';
   import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
   import RemoveFromSharedLink from '$lib/components/timeline/actions/RemoveFromSharedLinkAction.svelte';
   import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
@@ -11,13 +12,22 @@
   import { Route } from '$lib/route';
   import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
-  import { handlePromiseError } from '$lib/utils';
+  import { preferUnenhancedSharedThumbnails } from '$lib/stores/preferences.store';
+  import { handlePromiseError, isMobileDownloadClient } from '$lib/utils';
   import { downloadArchive } from '$lib/utils/asset-utils';
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
   import { handleError } from '$lib/utils/handle-error';
+  import {
+    filterSharedAssets,
+    locationOptionsFromAssets,
+  } from '$lib/utils/shared-link-filters';
+  import { canUploadToSharedLink, ensureSharedLinkContributorInfo, ensureSharedLinkUploadAccess } from '$lib/utils/shared-link-upload';
+  import type { SharedLinkFilter } from '$lib/types';
   import { toTimelineAsset } from '$lib/utils/timeline-util';
-  import { getAssetInfo, type SharedLinkResponseDto } from '@immich/sdk';
-  import { IconButton, Logo, toastManager } from '@immich/ui';
+  import { handleDownloadAsset } from '$lib/services/asset.service';
+  import type { SharedLinkResponseDto } from '@immich/sdk';
+  import { IconButton } from '@immich/ui';
+  import GalleryLogo from '$lib/components/shared-components/GalleryLogo.svelte';
   import { mdiDownload, mdiFileImagePlusOutline, mdiSelectAll } from '@mdi/js';
   import { t } from 'svelte-i18n';
   import ControlAppBar from '../shared-components/ControlAppBar.svelte';
@@ -30,12 +40,20 @@
 
   let { sharedLink = $bindable(), isOwned }: Props = $props();
 
-  const viewport: Viewport = $state({ width: 0, height: 0 });
+  let filters = $state<SharedLinkFilter>({});
+  const locationOptions = $derived(locationOptionsFromAssets(sharedLink.assets));
+  const assets = $derived(filterSharedAssets(sharedLink.assets, filters));
+  const canUpload = $derived(canUploadToSharedLink(sharedLink));
 
-  let assets = $derived(sharedLink.assets);
+  const viewport: Viewport = $state({ width: 0, height: 0 });
 
   dragAndDropFilesStore.subscribe((value) => {
     if (!(value.isDragging && value.files.length > 0)) {
+      return;
+    }
+
+    if (!canUploadToSharedLink(sharedLink)) {
+      dragAndDropFilesStore.set({ isDragging: false, files: [] });
       return;
     }
 
@@ -44,16 +62,38 @@
   });
 
   const downloadAssets = async () => {
-    await downloadArchive(`immich-shared`, { assetIds: assets.map((asset) => asset.id) });
+    // Prefer share-to-gallery on phones instead of a zip that lands in Files.
+    if (isMobileDownloadClient() && assets.length > 0 && assets.length <= 20) {
+      for (const [index, asset] of assets.entries()) {
+        await handleDownloadAsset(asset, { edited: true });
+        if (index < assets.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+        }
+      }
+      return;
+    }
+
+    await downloadArchive(`immich-shared.zip`, {
+      assetIds: assets.map((asset) => asset.id),
+      edited: true,
+      downloadFormat: 'jpg',
+    });
   };
 
   const handleUploadAssets = async (files: File[] = []) => {
     try {
-      await (!files || files.length === 0 || !Array.isArray(files)
-        ? openFileUploadDialog()
-        : fileUploadHandler({ files }));
+      if (!(await ensureSharedLinkUploadAccess(sharedLink))) {
+        return;
+      }
 
-      toastManager.primary();
+      const contributor = await ensureSharedLinkContributorInfo(sharedLink);
+      if (!contributor) {
+        return;
+      }
+
+      await (!files || files.length === 0 || !Array.isArray(files)
+        ? openFileUploadDialog({ contributor })
+        : fileUploadHandler({ files, contributor }));
     } catch (error) {
       handleError(error, $t('errors.unable_to_add_assets_to_shared_link'));
     }
@@ -76,8 +116,14 @@
   };
 </script>
 
-{#if sharedLink?.allowUpload || assets.length > 1}
+{#if canUpload || sharedLink.assets.length > 1}
   <main class="isolate mx-4 mt-24 mb-40" bind:clientHeight={viewport.height} bind:clientWidth={viewport.width}>
+    <SharedLinkFilters
+      bind:filters
+      showLocation={sharedLink.showMetadata}
+      {locationOptions}
+      sourceAssets={sharedLink.assets}
+    />
     <GalleryViewer {assets} assetInteraction={assetMultiSelectManager} {viewport} allowDeletion={false} />
   </main>
 
@@ -103,12 +149,12 @@
       <ControlAppBar>
         {#snippet leading()}
           <a data-sveltekit-preload-data="hover" class="ms-4" href="/">
-            <Logo variant={mediaQueryManager.maxMd ? 'icon' : 'inline'} class="min-w-10" />
+            <GalleryLogo variant="inline" class="min-w-10 max-md:text-sm" />
           </a>
         {/snippet}
 
         {#snippet trailing()}
-          {#if sharedLink?.allowUpload}
+          {#if canUpload}
             <IconButton
               shape="round"
               color="secondary"
@@ -129,11 +175,20 @@
               icon={mdiDownload}
             />
           {/if}
+          <button
+            type="button"
+            class="rounded-full border px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-gray-200/70 dark:hover:bg-gray-700/60"
+            aria-label={$t('toggle_shared_standard_previews')}
+            title={$t('toggle_shared_standard_previews')}
+            onclick={() => ($preferUnenhancedSharedThumbnails = !$preferUnenhancedSharedThumbnails)}
+          >
+            {$preferUnenhancedSharedThumbnails ? $t('view_mode_standard') : $t('view_mode_enhanced')}
+          </button>
         {/snippet}
       </ControlAppBar>
     {/if}
   </header>
-{:else if assets.length === 1}
+{:else if sharedLink.assets.length === 1}
   {#await getAssetInfo({ ...authManager.params, id: assets[0].id }) then asset}
     {#await import('$lib/components/asset-viewer/AssetViewer.svelte') then { default: AssetViewer }}
       <AssetViewer cursor={{ current: asset }} onAction={handleAction} />

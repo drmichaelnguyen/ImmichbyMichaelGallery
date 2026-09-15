@@ -1,11 +1,17 @@
 import { editAsset, removeAssetEdits, type AssetEditsCreateDto, type AssetResponseDto } from '@immich/sdk';
 import { ConfirmModal, modalManager, toastManager } from '@immich/ui';
-import { mdiCropRotate } from '@mdi/js';
+import { mdiBrush, mdiCropRotate, mdiTune } from '@mdi/js';
 import type { Component } from 'svelte';
+import ColorTool from '$lib/components/asset-viewer/editor/color-tool/ColorTool.svelte';
+import LocalTool from '$lib/components/asset-viewer/editor/local-tool/LocalTool.svelte';
 import TransformTool from '$lib/components/asset-viewer/editor/transform-tool/TransformTool.svelte';
+import { colorManager } from '$lib/managers/edit/color-manager.svelte';
+import { localManager } from '$lib/managers/edit/local-manager.svelte';
 import { transformManager } from '$lib/managers/edit/transform-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
+import { handleDownloadRenderedEdits } from '$lib/services/asset.service';
 import { waitForWebsocketEvent } from '$lib/stores/websocket';
+import { getSharedLink } from '$lib/utils';
 import { getFormatter } from '$lib/utils/i18n';
 
 export type EditAction = AssetEditsCreateDto['edits'][number];
@@ -22,6 +28,8 @@ export interface EditToolManager {
 
 export enum EditToolType {
   Transform = 'transform',
+  Color = 'color',
+  Local = 'local',
 }
 
 export interface EditTool {
@@ -32,14 +40,33 @@ export interface EditTool {
 }
 
 export class EditManager {
-  tools: EditTool[] = [
-    {
-      type: EditToolType.Transform,
-      icon: mdiCropRotate,
-      component: TransformTool,
-      manager: transformManager,
-    },
-  ];
+  /**
+   * Lazy getter: edit-manager ↔ TransformTool forms a circular module graph, so
+   * eagerly capturing `transformManager` in a class field can freeze `undefined`
+   * into `tools` (bundle init order). Resolve managers on access instead.
+   */
+  get tools(): EditTool[] {
+    return [
+      {
+        type: EditToolType.Transform,
+        icon: mdiCropRotate,
+        component: TransformTool,
+        manager: transformManager,
+      },
+      {
+        type: EditToolType.Color,
+        icon: mdiTune,
+        component: ColorTool,
+        manager: colorManager,
+      },
+      {
+        type: EditToolType.Local,
+        icon: mdiBrush,
+        component: LocalTool,
+        manager: localManager,
+      },
+    ];
+  }
 
   currentAsset = $state<AssetResponseDto | null>(null);
   selectedTool = $state<EditTool | null>(null);
@@ -51,6 +78,7 @@ export class EditManager {
 
   hasUnsavedChanges = $derived(this.tools.some((t) => t.manager.hasChanges) && !this.hasAppliedEdits);
   canReset = $derived(this.tools.some((t) => t.manager.canReset));
+  isSharedEditor = $derived(!!getSharedLink());
 
   async closeConfirm(): Promise<boolean> {
     // Prevent multiple dialogs (usually happens with rapid escape key presses)
@@ -84,6 +112,35 @@ export class EditManager {
     this.selectedTool = this.tools[0];
   }
 
+  async initialize(asset: AssetResponseDto, edits: AssetEditsCreateDto) {
+    this.hasAppliedEdits = false;
+    this.currentAsset = asset;
+
+    // Select Transform first so CropArea mounts before transformManager.onActivate runs.
+    this.selectedTool = this.tools[0];
+    const { tick } = await import('svelte');
+    await tick();
+
+    for (const tool of this.tools) {
+      await tool.manager.onActivate(asset, edits.edits);
+    }
+  }
+
+  async selectTool(toolType: EditToolType) {
+    const newTool = this.tools.find((t) => t.type === toolType);
+    if (!newTool) {
+      return;
+    }
+
+    this.selectedTool = newTool;
+
+    if (toolType === EditToolType.Transform && this.currentAsset) {
+      const { tick } = await import('svelte');
+      await tick();
+      transformManager.relayout();
+    }
+  }
+
   async activateTool(toolType: EditToolType, asset: AssetResponseDto, edits: AssetEditsCreateDto) {
     this.hasAppliedEdits = false;
     if (this.selectedTool?.type === toolType) {
@@ -96,6 +153,8 @@ export class EditManager {
     const newTool = this.tools.find((t) => t.type === toolType);
     if (newTool) {
       this.selectedTool = newTool;
+      const { tick } = await import('svelte');
+      await tick();
       await newTool.manager.onActivate?.(asset, edits.edits);
     }
   }
@@ -104,6 +163,9 @@ export class EditManager {
     for (const tool of this.tools) {
       tool.manager.onDeactivate?.();
     }
+    transformManager.reset();
+    void colorManager.resetAllChanges();
+    void localManager.resetAllChanges();
     this.currentAsset = null;
     this.selectedTool = null;
   }
@@ -115,6 +177,10 @@ export class EditManager {
   }
 
   async applyEdits(): Promise<boolean> {
+    if (this.isSharedEditor) {
+      return this.downloadSharedEdits();
+    }
+
     this.isApplyingEdits = true;
 
     const edits = this.tools.flatMap((tool) => tool.manager.edits);
@@ -127,7 +193,7 @@ export class EditManager {
 
     try {
       // Setup the websocket listener before sending the edit request
-      const editCompleted = waitForWebsocketEvent('AssetEditReadyV2', (event) => event.asset.id === assetId, 10_000);
+      const editCompleted = waitForWebsocketEvent('AssetEditReadyV2', (event) => event.asset.id === assetId, 120_000);
 
       await (edits.length === 0
         ? removeAssetEdits({ id: assetId })
@@ -148,6 +214,29 @@ export class EditManager {
       return true;
     } catch {
       toastManager.danger(t('editor_edits_applied_error'));
+      return false;
+    } finally {
+      this.isApplyingEdits = false;
+    }
+  }
+
+  private async downloadSharedEdits(): Promise<boolean> {
+    this.isApplyingEdits = true;
+
+    const edits = this.tools.flatMap((tool) => tool.manager.edits);
+    const t = await getFormatter();
+
+    try {
+      if (!this.currentAsset) {
+        return false;
+      }
+
+      await handleDownloadRenderedEdits(this.currentAsset, edits, this.hasUnsavedChanges);
+      toastManager.primary(t('editor_download_started'));
+      this.hasAppliedEdits = true;
+      return true;
+    } catch {
+      toastManager.danger(t('editor_download_error'));
       return false;
     } finally {
       this.isApplyingEdits = false;

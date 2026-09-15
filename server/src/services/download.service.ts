@@ -4,8 +4,9 @@ import sanitize from 'sanitize-filename';
 import { StorageCore } from 'src/cores/storage.core';
 import { AuthDto } from 'src/dtos/auth.dto';
 import { DownloadArchiveDto, DownloadArchiveInfo, DownloadInfoDto, DownloadResponseDto } from 'src/dtos/download.dto';
-import { Permission } from 'src/enum';
-import { ImmichReadStream } from 'src/repositories/storage.repository';
+import { AssetEditActionItem } from 'src/dtos/editing.dto';
+import { AssetType, ExifOrientation, Permission } from 'src/enum';
+import { ImmichReadStream, ImmichZipStream } from 'src/repositories/storage.repository';
 import { BaseService } from 'src/services/base.service';
 import { HumanReadableSize } from 'src/utils/bytes';
 import { getPreferences } from 'src/utils/preferences';
@@ -84,6 +85,10 @@ export class DownloadService extends BaseService {
     await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: dto.assetIds });
 
     const zip = this.storageRepository.createZipStream();
+    if (dto.downloadFormat === 'jpg') {
+      return this.downloadJpgArchive(dto, zip);
+    }
+
     const assets = await this.assetRepository.getForOriginals(dto.assetIds, dto.edited ?? false);
     const assetMap = new Map(assets.map((asset) => [asset.id, asset]));
     const paths: Record<string, number> = {};
@@ -121,5 +126,108 @@ export class DownloadService extends BaseService {
       stream: zip.stream,
       disposition: dto.archiveName && `attachment; filename*=UTF-8''${encodeURIComponent(dto.archiveName)}.zip`,
     };
+  }
+
+  private getArchiveFilename(paths: Record<string, number>, originalFileName: string, extension?: string) {
+    const parsed = parse(sanitize(originalFileName) || 'unnamed');
+    let filename = extension ? `${parsed.name || 'unnamed'}${extension}` : sanitize(originalFileName) || 'unnamed';
+    const count = paths[filename] || 0;
+    paths[filename] = count + 1;
+    if (count !== 0) {
+      const parsedFilename = parse(filename);
+      filename = `${parsedFilename.name}+${count}${parsedFilename.ext}`;
+    }
+    return filename;
+  }
+
+  private async downloadJpgArchive(dto: DownloadArchiveDto, zip: ImmichZipStream) {
+    const { image } = await this.getConfig({ withCache: true });
+    const wantEdited = dto.edited ?? true;
+    const editedPaths = wantEdited
+      ? new Map(
+          (await this.assetRepository.getForOriginals(dto.assetIds, true)).map((asset) => [
+            asset.id,
+            asset.editedPath ?? null,
+          ]),
+        )
+      : new Map<string, string | null>();
+
+    const assetEntries = await Promise.all(
+      dto.assetIds.map(async (assetId) => {
+        try {
+          return [assetId, await this.assetRepository.getForEdit(assetId)] as const;
+        } catch {
+          return [assetId, null] as const;
+        }
+      }),
+    );
+    const assetMap = new Map(assetEntries.filter((entry) => !!entry[1]));
+    const paths: Record<string, number> = {};
+
+    for (const assetId of dto.assetIds) {
+      const asset = assetMap.get(assetId);
+      if (!asset?.originalPath) {
+        continue;
+      }
+
+      if (asset.type === AssetType.Image) {
+        const filename = this.getArchiveFilename(paths, asset.originalFileName, '.jpg');
+        const editedPath = editedPaths.get(assetId);
+
+        // Prefer the already-rendered edited fullsize JPEG when available.
+        if (wantEdited && editedPath) {
+          try {
+            let realpath = editedPath;
+            try {
+              realpath = await this.storageRepository.realpath(editedPath);
+            } catch {
+              // use editedPath as-is
+            }
+            zip.addFile(realpath, filename);
+            continue;
+          } catch (error) {
+            this.logger.warn('Unable to add edited JPG to archive; rendering from edits', {
+              assetId,
+              editedPath,
+              error,
+            });
+          }
+        }
+
+        try {
+          const persistedEdits = wantEdited ? await this.assetEditRepository.getAll(assetId) : [];
+          const edits = persistedEdits.map(({ action, parameters }) => ({
+            action,
+            parameters,
+          })) as AssetEditActionItem[];
+          const buffer = await this.mediaRepository.renderImageBufferWithEdits(asset.originalPath, {
+            colorspace: image.colorspace,
+            processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
+            orientation: (asset.orientation as ExifOrientation | null) ?? undefined,
+            edits,
+          });
+          zip.addBuffer(buffer, filename);
+          continue;
+        } catch (error) {
+          this.logger.warn('Unable to render JPG for archive; falling back to original', {
+            assetId,
+            originalPath: asset.originalPath,
+            error,
+          });
+        }
+      }
+
+      const filename = this.getArchiveFilename(paths, asset.originalFileName);
+      let realpath = asset.originalPath;
+      try {
+        realpath = await this.storageRepository.realpath(realpath);
+      } catch {
+        this.logger.warn('Unable to resolve realpath', { originalPath: asset.originalPath });
+      }
+      zip.addFile(realpath, filename);
+    }
+
+    void zip.finalize();
+    return { stream: zip.stream };
   }
 }

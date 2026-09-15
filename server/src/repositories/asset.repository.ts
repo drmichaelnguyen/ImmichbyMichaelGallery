@@ -99,6 +99,10 @@ interface AssetBuilderOptions {
 export interface TimeBucketOptions extends AssetBuilderOptions {
   order?: AssetOrder;
   orderBy?: AssetOrderBy;
+  takenAfter?: Date;
+  takenBefore?: Date;
+  city?: string;
+  country?: string;
 }
 
 export interface TimeBucketItem {
@@ -772,6 +776,18 @@ export class AssetRepository {
 
             return withBoundingBox(withBoundingCircle, bbox);
           })
+          .$if(!!options.takenAfter, (qb) => qb.where('asset.localDateTime', '>=', options.takenAfter!))
+          .$if(!!options.takenBefore, (qb) => qb.where('asset.localDateTime', '<', options.takenBefore!))
+          .$if(!!options.city || !!options.country, (qb) => {
+            let q = qb.innerJoin('asset_exif', 'asset.id', 'asset_exif.assetId');
+            if (options.city) {
+              q = q.where('asset_exif.city', '=', options.city!);
+            }
+            if (options.country) {
+              q = q.where('asset_exif.country', '=', options.country!);
+            }
+            return q;
+          })
           .$if(options.visibility === undefined, withDefaultVisibility)
           .$if(!!options.visibility, (qb) => qb.where('asset.visibility', '=', options.visibility!))
           .$if(!!options.albumId, (qb) =>
@@ -867,6 +883,10 @@ export class AssetRepository {
 
             return withBoundingBox(withBoundingCircle, bbox);
           })
+          .$if(!!options.takenAfter, (qb) => qb.where('asset.localDateTime', '>=', options.takenAfter!))
+          .$if(!!options.takenBefore, (qb) => qb.where('asset.localDateTime', '<', options.takenBefore!))
+          .$if(!!options.city, (qb) => qb.where('asset_exif.city', '=', options.city!))
+          .$if(!!options.country, (qb) => qb.where('asset_exif.country', '=', options.country!))
           .where(truncatedDate(options.orderBy), '=', timeBucket.replace(/^[+-]/, ''))
           .$if(!!options.albumId, (qb) =>
             qb.where((eb) =>
@@ -1187,7 +1207,8 @@ export class AssetRepository {
     return this.db
       .selectFrom('asset')
       .select(['asset.originalPath'])
-      .select((eb) => withFilePath(eb, AssetFileType.EncodedVideo).as('encodedVideoPath'))
+      .select((eb) => withFilePath(eb, AssetFileType.EncodedVideo, true).as('editedEncodedVideoPath'))
+      .select((eb) => withFilePath(eb, AssetFileType.EncodedVideo, false).as('encodedVideoPath'))
       .where('asset.id', '=', id)
       .where('asset.type', '=', AssetType.Video)
       .executeTakeFirst();

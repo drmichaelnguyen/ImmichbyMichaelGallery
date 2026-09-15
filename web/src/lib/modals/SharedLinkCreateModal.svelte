@@ -16,11 +16,13 @@
 
   let description = $state('');
   let allowDownload = $state(true);
-  let allowUpload = $state(false);
+  let allowUpload = $state(!!albumId);
   let showMetadata = $state(true);
   let password = $state('');
+  let uploadPassword = $state('');
   let slug = $state('');
   let expiresAt = $state<string | null>(null);
+  let uploadExpiresAt = $state<string | null>(null);
 
   let type = $derived(albumId ? SharedLinkType.Album : SharedLinkType.Individual);
 
@@ -30,9 +32,11 @@
       albumId,
       assetIds,
       expiresAt,
+      uploadExpiresAt: allowUpload ? uploadExpiresAt : null,
       allowUpload,
       description,
       password,
+      uploadPassword: allowUpload ? uploadPassword || null : null,
       allowDownload,
       showMetadata,
       slug,
@@ -65,7 +69,9 @@
     bind:description
     bind:allowDownload
     bind:allowUpload
+    bind:uploadPassword
     bind:showMetadata
     bind:expiresAt
+    bind:uploadExpiresAt
   />
 </FormModal>

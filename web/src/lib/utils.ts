@@ -25,7 +25,13 @@ import { init, register, t } from 'svelte-i18n';
 import { derived, get } from 'svelte/store';
 import { defaultLang, locales } from '$lib/constants';
 import { authManager } from '$lib/managers/auth-manager.svelte';
-import { alwaysLoadOriginalFile, lang, locale } from '$lib/stores/preferences.store';
+import {
+  alwaysLoadOriginalFile,
+  lang,
+  locale,
+  preferUnenhancedSharedThumbnails,
+  preferUnenhancedThumbnails,
+} from '$lib/stores/preferences.store';
 import { isWebCompatibleImage } from '$lib/utils/asset-utils';
 import { handleError } from '$lib/utils/handle-error';
 import { convertBCP47, langs } from '$lib/utils/i18n';
@@ -172,6 +178,9 @@ let _sharedLink: SharedLinkResponseDto | undefined;
 export const setSharedLink = (sharedLink: typeof _sharedLink) => (_sharedLink = sharedLink);
 export const getSharedLink = (): typeof _sharedLink => _sharedLink;
 
+const getUnenhancedPreference = (isSharedLink: boolean) =>
+  get(isSharedLink ? preferUnenhancedSharedThumbnails : preferUnenhancedThumbnails);
+
 const createUrl = (path: string, parameters?: Record<string, unknown>) => {
   const searchParameters = new URLSearchParams();
   for (const key in parameters) {
@@ -187,7 +196,14 @@ const createUrl = (path: string, parameters?: Record<string, unknown>) => {
   return getBaseUrl() + url.pathname + url.search + url.hash;
 };
 
-type AssetUrlOptions = { id: string; cacheKey?: string | null; edited?: boolean; size?: AssetMediaSize };
+type AssetUrlOptions = {
+  id: string;
+  cacheKey?: string | null;
+  edited?: boolean;
+  size?: AssetMediaSize;
+  /** Pass through to API; when true, requests standard preview/thumbnail (not auto-enhanced). */
+  unenhanced?: boolean;
+};
 
 export const getAssetUrl = ({
   asset,
@@ -203,16 +219,23 @@ export const getAssetUrl = ({
   }
   const id = asset.id;
   const cacheKey = asset.thumbhash;
+  const unenhanced = getUnenhancedPreference(!!sharedLink);
   if (sharedLink && (!sharedLink.allowDownload || !sharedLink.showMetadata)) {
-    return getAssetMediaUrl({ id, size: AssetMediaSize.Preview, cacheKey });
+    return getAssetMediaUrl({ id, size: AssetMediaSize.Preview, cacheKey, unenhanced });
   }
   const size = targetImageSize(asset, forceOriginal);
-  return getAssetMediaUrl({ id, size, cacheKey });
+  return getAssetMediaUrl({ id, size, cacheKey, unenhanced });
 };
 
 export function getAssetUrls(asset: AssetResponseDto, sharedLink?: SharedLinkResponseDto) {
+  const unenhanced = getUnenhancedPreference(!!sharedLink);
   return {
-    thumbnail: getAssetMediaUrl({ id: asset.id, cacheKey: asset.thumbhash, size: AssetMediaSize.Thumbnail }),
+    thumbnail: getAssetMediaUrl({
+      id: asset.id,
+      cacheKey: asset.thumbhash,
+      size: AssetMediaSize.Thumbnail,
+      unenhanced,
+    }),
     preview: getAssetUrl({ asset, sharedLink })!,
     original: getAssetUrl({ asset, sharedLink, forceOriginal: true })!,
   };
@@ -232,10 +255,18 @@ export const targetImageSize = (asset: AssetResponseDto, forceOriginal: boolean)
 };
 
 export const getAssetMediaUrl = (options: AssetUrlOptions) => {
-  const { id, size, cacheKey: c, edited = true } = options;
+  const { id, size, cacheKey: c, edited = true, unenhanced: unenhancedOpt } = options;
   const isOriginal = size === AssetMediaSize.Original;
   const path = isOriginal ? getAssetOriginalPath(id) : getAssetThumbnailPath(id);
-  return createUrl(path, { ...authManager.params, size: isOriginal ? undefined : size, c, edited });
+  const isSharedLink = !!getSharedLink();
+  const unenhanced = unenhancedOpt ?? (isOriginal ? false : getUnenhancedPreference(isSharedLink));
+  return createUrl(path, {
+    ...authManager.params,
+    size: isOriginal ? undefined : size,
+    c,
+    edited,
+    ...(unenhanced ? { unenhanced: true } : {}),
+  });
 };
 
 export const getAssetPlaybackUrl = (options: AssetUrlOptions) => {
@@ -281,19 +312,113 @@ const jsonReplacer = (_key: string, value: unknown) =>
         }, {})
     : value;
 
+export const downloadBlob = (data: Blob, filename: string) => {
+  if (!(data instanceof Blob) || data.size === 0) {
+    throw new TypeError('Cannot download empty file');
+  }
+
+  const url = URL.createObjectURL(data);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.rel = 'noopener';
+  document.body.append(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+};
+
+/**
+ * Re-encode through canvas to a phone-safe sRGB JPEG.
+ * Fixes gray/dark Photos imports from WebP-as-.jpg, wide-gamut, or odd Content-Types.
+ */
+export const normalizeImageBlobToJpeg = async (data: Blob, quality = 0.92): Promise<Blob> => {
+  if (!(data instanceof Blob) || data.size === 0) {
+    throw new TypeError('Cannot normalize empty image');
+  }
+
+  const bitmap = await createImageBitmap(data);
+  try {
+    const canvas = document.createElement('canvas');
+    canvas.width = bitmap.width;
+    canvas.height = bitmap.height;
+    const context = canvas.getContext('2d');
+    if (!context) {
+      throw new TypeError('Canvas is unavailable');
+    }
+    context.drawImage(bitmap, 0, 0);
+
+    const jpeg = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new TypeError('JPEG encode failed'))),
+        'image/jpeg',
+        quality,
+      );
+    });
+
+    if (jpeg.size === 0) {
+      throw new TypeError('JPEG encode produced an empty file');
+    }
+
+    return jpeg;
+  } finally {
+    bitmap.close();
+  }
+};
+
+/**
+ * Prefer downloadRequest + downloadBlob. Direct `<a download>` against Immich's
+ * Content-Disposition: inline originals often produces empty (0 KB) files in Safari/Chromium.
+ */
 export const downloadUrl = (url: string, filename: string) => {
   const anchor = document.createElement('a');
   anchor.href = url;
   anchor.download = filename;
+  anchor.rel = 'noopener';
 
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
-
-  URL.revokeObjectURL(url);
 };
 
-export const downloadUrlPost = (url: string, assetIds: string[], archiveName: string) => {
+const RAW_EXTENSIONS = new Set([
+  '3fr',
+  'arw',
+  'cr2',
+  'cr3',
+  'dng',
+  'fff',
+  'iiq',
+  'kdc',
+  'mdc',
+  'mef',
+  'mos',
+  'mrw',
+  'nef',
+  'nrw',
+  'orf',
+  'pef',
+  'raf',
+  'raw',
+  'rw2',
+  'sr2',
+  'srf',
+  'srw',
+  'x3f',
+]);
+
+export const isRawDownloadFilename = (filename: string) => {
+  const extension = filename.split('.').pop()?.toLowerCase();
+  return !!extension && RAW_EXTENSIONS.has(extension);
+};
+
+export const downloadUrlPost = (
+  url: string,
+  assetIds: string[],
+  archiveName: string,
+  edited = true,
+  downloadFormat: 'original' | 'jpg' = 'original',
+) => {
   const form = document.createElement('form');
   form.method = 'post';
   form.action = url;
@@ -309,7 +434,10 @@ export const downloadUrlPost = (url: string, assetIds: string[], archiveName: st
 
   mkInput('assetIds', assetIds.join(','));
   mkInput('archiveName', archiveName);
-  mkInput('edited', 'true');
+  mkInput('edited', edited ? 'true' : 'false');
+  if (downloadFormat !== 'original') {
+    mkInput('downloadFormat', downloadFormat);
+  }
 
   document.body.append(form);
   form.submit();
@@ -317,6 +445,149 @@ export const downloadUrlPost = (url: string, assetIds: string[], archiveName: st
 };
 
 export const downloadBlob = (data: Blob, filename: string) => downloadUrl(URL.createObjectURL(data), filename);
+
+const guessMimeType = (filename: string, fallback = 'application/octet-stream') => {
+  const extension = filename.split('.').pop()?.toLowerCase();
+  switch (extension) {
+    case 'jpg':
+    case 'jpeg': {
+      return 'image/jpeg';
+    }
+    case 'png': {
+      return 'image/png';
+    }
+    case 'gif': {
+      return 'image/gif';
+    }
+    case 'webp': {
+      return 'image/webp';
+    }
+    case 'heic': {
+      return 'image/heic';
+    }
+    case 'heif': {
+      return 'image/heif';
+    }
+    case 'tif':
+    case 'tiff': {
+      return 'image/tiff';
+    }
+    case 'mp4': {
+      return 'video/mp4';
+    }
+    case 'mov': {
+      return 'video/quicktime';
+    }
+    case 'm4v': {
+      return 'video/x-m4v';
+    }
+    case 'webm': {
+      return 'video/webm';
+    }
+    case 'nef': {
+      return 'image/x-nikon-nef';
+    }
+    case 'dng': {
+      return 'image/x-adobe-dng';
+    }
+    default: {
+      return fallback;
+    }
+  }
+};
+
+/** Photos/Gallery can typically accept these via the share sheet — not RAW. */
+export const isGalleryShareableFilename = (filename: string) => {
+  if (isRawDownloadFilename(filename)) {
+    return false;
+  }
+
+  const mime = guessMimeType(filename);
+  return mime.startsWith('image/') || mime.startsWith('video/');
+};
+
+/** True for phones/tablets where browser downloads usually land in Files, not Photos/Gallery. */
+export const isMobileDownloadClient = () => {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+
+  const ua = navigator.userAgent;
+  if (/Android|iPhone|iPod|Mobile/i.test(ua)) {
+    return true;
+  }
+
+  // iPadOS reports as Macintosh but is touch-first.
+  return navigator.maxTouchPoints > 1 && /Macintosh/i.test(ua);
+};
+
+const canShareFiles = (files: File[]) => {
+  if (typeof navigator === 'undefined' || typeof navigator.share !== 'function') {
+    return false;
+  }
+  // Some mobile browsers omit canShare or lie; treat missing canShare as ok.
+  if (typeof navigator.canShare !== 'function') {
+    return true;
+  }
+  return navigator.canShare({ files });
+};
+
+/**
+ * On phones, save via the system share sheet (Save Image / Save Video → gallery).
+ * Share must run from a user gesture; after fetching the file we show a one-tap
+ * Save to Photos confirm so iOS/Android still allow the share sheet.
+ * Desktop / non-shareable files use a normal download.
+ */
+export const shareOrDownloadBlob = async (data: Blob, filename: string) => {
+  if (!(data instanceof Blob) || data.size === 0) {
+    throw new TypeError('Cannot download empty file');
+  }
+
+  const type = data.type && data.type !== 'application/octet-stream' ? data.type : guessMimeType(filename, data.type);
+  const typedBlob = type && type !== data.type ? new Blob([data], { type }) : data;
+
+  if (isRawDownloadFilename(filename) || !isGalleryShareableFilename(filename)) {
+    downloadBlob(typedBlob, filename);
+    return;
+  }
+
+  const file = new File([typedBlob], filename, { type: type || 'application/octet-stream' });
+
+  if (isMobileDownloadClient() && canShareFiles([file])) {
+    const { modalManager } = await import('@immich/ui');
+    const SaveToPhotosModal = (await import('$lib/modals/SaveToPhotosModal.svelte')).default;
+    await modalManager.show(SaveToPhotosModal, { file, filename });
+    return;
+  }
+
+  downloadBlob(typedBlob, filename);
+};
+
+export const shareOrDownloadFiles = async (files: File[], filename: string) => {
+  const validFiles = files.filter((file) => file.size > 0);
+  if (validFiles.length === 0) {
+    throw new TypeError('Cannot download empty files');
+  }
+
+  if (validFiles.length === 1) {
+    await shareOrDownloadBlob(validFiles[0], validFiles[0].name);
+    return;
+  }
+
+  if (isMobileDownloadClient() && canShareFiles(validFiles)) {
+    const { modalManager } = await import('@immich/ui');
+    const SaveToPhotosModal = (await import('$lib/modals/SaveToPhotosModal.svelte')).default;
+    await modalManager.show(SaveToPhotosModal, { files: validFiles, filename });
+    return;
+  }
+
+  for (const [index, file] of validFiles.entries()) {
+    if (index > 0) {
+      await sleep(300);
+    }
+    downloadBlob(file, file.name);
+  }
+};
 
 export const downloadJson = (data: unknown, filename: string) => {
   const blob = new Blob([JSON.stringify(data, jsonReplacer, 2)], { type: 'application/json' });

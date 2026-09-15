@@ -57,23 +57,29 @@ const authSharedLinkFactory = (sharedLink: Partial<AuthSharedLink> = {}) => {
   const {
     id = newUuid(),
     expiresAt = null,
+    uploadExpiresAt = null,
     userId = newUuid(),
     showExif = true,
     albumId = null,
     allowUpload = false,
     allowDownload = true,
     password = null,
+    uploadPassword = null,
+    uploadUnlocked = true,
   } = sharedLink;
 
   return {
     id,
     albumId,
     expiresAt,
+    uploadExpiresAt,
     userId,
     showExif,
     allowUpload,
     allowDownload,
     password,
+    uploadPassword,
+    uploadUnlocked,
   };
 };
 

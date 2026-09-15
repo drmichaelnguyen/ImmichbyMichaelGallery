@@ -1,4 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import _ from 'lodash';
 import { DateTime, Duration } from 'luxon';
 import { AssetFile } from 'src/database';
@@ -27,6 +30,8 @@ import {
   AssetStatus,
   AssetType,
   AssetVisibility,
+  CacheControl,
+  ExifOrientation,
   JobName,
   JobStatus,
   Permission,
@@ -45,6 +50,7 @@ import {
 } from 'src/utils/asset.util';
 import { updateLockedColumns } from 'src/utils/database';
 import { extractTimeZone } from 'src/utils/date';
+import { getFileNameWithoutExtension, ImmichFileResponse } from 'src/utils/file';
 import { batched, findOrFail } from 'src/utils/misc';
 import { transformOcrBoundingBox } from 'src/utils/transform';
 
@@ -532,6 +538,70 @@ export class AssetService extends BaseService {
       throw new BadRequestException('Asset not found');
     }
 
+    const edits = dto.edits as AssetEditActionItem[];
+
+    this.validateImageEdits(asset, edits);
+
+    const newEdits = await this.assetEditRepository.replaceAll(id, edits);
+    await this.jobRepository.queue({ name: JobName.AssetEditThumbnailGeneration, data: { id } });
+
+    // Return the asset and its applied edits
+    return {
+      assetId: id,
+      edits: newEdits,
+    };
+  }
+
+  async renderAssetEdits(auth: AuthDto, id: string, dto: AssetEditsCreateDto): Promise<ImmichFileResponse> {
+    await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
+
+    const asset = await this.assetRepository.getForEdit(id);
+    if (!asset) {
+      throw new BadRequestException('Asset not found');
+    }
+
+    const edits = dto.edits as AssetEditActionItem[];
+    this.validateImageEdits(asset, edits);
+
+    if (asset.type !== AssetType.Image) {
+      throw new BadRequestException('Only images can be rendered');
+    }
+
+    const { image } = await this.getConfig({ withCache: true });
+    const tempPath = join(tmpdir(), `immich-render-${randomUUID()}.jpg`);
+
+    await this.mediaRepository.renderImageWithEdits(asset.originalPath!, tempPath, {
+      colorspace: image.colorspace,
+      processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
+      orientation: (asset.orientation as ExifOrientation | null) ?? undefined,
+      edits,
+    });
+
+    return new ImmichFileResponse({
+      path: tempPath,
+      fileName: `${getFileNameWithoutExtension(asset.originalFileName)}-edited.jpg`,
+      contentType: 'image/jpeg',
+      cacheControl: CacheControl.PrivateWithoutCache,
+    });
+  }
+
+  private validateImageEdits(
+    asset: NonNullable<Awaited<ReturnType<typeof this.assetRepository.getForEdit>>>,
+    edits: AssetEditActionItem[],
+  ) {
+    if (asset.type === AssetType.Video) {
+      if (edits.some((edit) => edit.action === AssetEditAction.Crop)) {
+        throw new BadRequestException('Crop is not supported for videos');
+      }
+      if (edits.some((edit) => edit.action === AssetEditAction.ColorAdjust)) {
+        throw new BadRequestException('Color adjustments are not supported for videos');
+      }
+      if (edits.some((edit) => edit.action === AssetEditAction.LocalAdjust)) {
+        throw new BadRequestException('Local adjustments are not supported for videos');
+      }
+      return;
+    }
+
     if (asset.type !== AssetType.Image) {
       throw new BadRequestException('Only images can be edited');
     }
@@ -552,25 +622,16 @@ export class AssetService extends BaseService {
       throw new BadRequestException('Editing SVG images is not supported');
     }
 
-    // check that crop parameters will not go out of bounds
     const { width: assetWidth, height: assetHeight } = getDimensions(asset);
 
     if (!assetWidth || !assetHeight) {
       throw new BadRequestException('Asset dimensions are not available for editing');
     }
 
-    const edits = dto.edits as AssetEditActionItem[];
     const crop = edits.find((e) => e.action === AssetEditAction.Crop);
     if (crop) {
       if (edits[0].action !== AssetEditAction.Crop) {
         throw new BadRequestException('Crop action must be the first edit action');
-      }
-
-      // check that crop parameters will not go out of bounds
-      const { width: assetWidth, height: assetHeight } = getDimensions(asset);
-
-      if (!assetWidth || !assetHeight) {
-        throw new BadRequestException('Asset dimensions are not available for editing');
       }
 
       const { x, y, width, height } = crop.parameters;
@@ -578,15 +639,6 @@ export class AssetService extends BaseService {
         throw new BadRequestException('Crop parameters are out of bounds');
       }
     }
-
-    const newEdits = await this.assetEditRepository.replaceAll(id, edits);
-    await this.jobRepository.queue({ name: JobName.AssetEditThumbnailGeneration, data: { id } });
-
-    // Return the asset and its applied edits
-    return {
-      assetId: id,
-      edits: newEdits,
-    };
   }
 
   async removeAssetEdits(auth: AuthDto, id: string): Promise<void> {

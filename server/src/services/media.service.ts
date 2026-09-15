@@ -4,7 +4,7 @@ import { ImagePathOptions, StorageCore, ThumbnailPathEntity } from 'src/cores/st
 import { AssetFile } from 'src/database';
 import { OnEvent, OnJob } from 'src/decorators';
 import { ConfigFFmpegDto, SystemConfig } from 'src/dtos/config.dto';
-import { AssetEditAction, CropParameters } from 'src/dtos/editing.dto';
+import { AssetEditAction, AssetEditActionItem, CropParameters } from 'src/dtos/editing.dto';
 import {
   AssetFileType,
   AssetType,
@@ -44,6 +44,7 @@ import { BaseConfig, ThumbnailConfig } from 'src/utils/media';
 import { mimeTypes } from 'src/utils/mime-types';
 import { batched, clamp } from 'src/utils/misc';
 import { getOutputDimensions } from 'src/utils/transform';
+import { appendVideoTransformToTranscodeCommand, getVideoTransformFilters } from 'src/utils/video-transform';
 
 interface UpsertFileOptions {
   assetId: string;
@@ -167,7 +168,17 @@ export class MediaService extends BaseService {
       generated?.files ?? [],
     );
 
-    let thumbhash: Buffer | undefined = generated?.thumbhash;
+    let thumbhash: Buffer | undefined =
+      generated && 'thumbhash' in generated ? generated.thumbhash : undefined;
+    if (!thumbhash && asset.type === AssetType.Video) {
+      const preview = getAssetFile(asset.files, AssetFileType.Preview, { isEdited: false });
+      if (preview) {
+        thumbhash = await this.mediaRepository.generateThumbhash(preview.path, {
+          colorspace: config.image.colorspace,
+          processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
+        });
+      }
+    }
     if (!thumbhash) {
       const extractedImage = await this.extractOriginalImage(asset, config.image);
       const { info, data, colorspace } = extractedImage;
@@ -184,7 +195,10 @@ export class MediaService extends BaseService {
       await this.assetRepository.update({ id: asset.id, thumbhash });
     }
 
-    const fullsizeDimensions = generated?.fullsizeDimensions ?? getDimensions(asset.exifInfo!);
+    const fullsizeDimensions =
+      generated && 'fullsizeDimensions' in generated
+        ? generated.fullsizeDimensions
+        : getDimensions(asset.exifInfo!);
     await this.assetRepository.update({ id: asset.id, ...fullsizeDimensions });
 
     return JobStatus.Success;
@@ -223,7 +237,9 @@ export class MediaService extends BaseService {
     }
 
     await this.syncFiles(asset.files, generated.files);
-    const thumbhash = editedGenerated?.thumbhash || generated.thumbhash;
+    const thumbhash =
+      (editedGenerated && 'thumbhash' in editedGenerated ? editedGenerated.thumbhash : undefined) ||
+      generated.thumbhash;
 
     if (!asset.thumbhash || Buffer.compare(asset.thumbhash, thumbhash) !== 0) {
       await this.assetRepository.update({ id: asset.id, thumbhash });
@@ -262,8 +278,11 @@ export class MediaService extends BaseService {
       ((image.fullsize.enabled || asset.exifInfo.projectionType === 'EQUIRECTANGULAR') &&
         !mimeTypes.isWebSupportedImage(asset.originalPath)) ||
       useEdits;
+    // Always re-encode an edited fullsize. For RAW + embedded JPEG, the stock Immich path
+    // would otherwise copy the unedited preview as fullsize (`isEdited: false`).
     const isConvertFullsize =
-      isGenerateFullsize && (!extracted || !mimeTypes.isWebSupportedImage(` .${extracted.format}`));
+      useEdits ||
+      (isGenerateFullsize && (!extracted || !mimeTypes.isWebSupportedImage(`.${extracted.format}`)));
 
     const thumbSource = extracted ? extracted.buffer : asset.originalPath;
     const { data, info, colorspace } = await this.decodeImage(
@@ -295,6 +314,18 @@ export class MediaService extends BaseService {
     const extractedImage = await this.extractOriginalImage(asset, image, useEdits);
     const { info, data, colorspace, generateFullsize, convertFullsize, extracted, isTransparent } = extractedImage;
 
+    // Crop coords from the editor are in EXIF/original space. RAW embedded JPEGs are smaller,
+    // so scale crop rectangles onto the decoded source before sharp.extract().
+    const imageEdits =
+      useEdits && asset.edits.length > 0
+        ? this.scaleEditsToDecodedSource(asset.edits, getDimensions(asset.exifInfo!), {
+            width: info.width,
+            height: info.height,
+          })
+        : useEdits
+          ? asset.edits
+          : [];
+
     const previewFormat = image.preview.format;
     this.warnOnTransparencyLoss(isTransparent, previewFormat, asset.id);
 
@@ -318,7 +349,7 @@ export class MediaService extends BaseService {
     this.storageCore.ensureFolders(previewFile.path);
 
     // generate final images
-    const baseOptions = { colorspace, processInvalidImages: false, raw: info, edits: useEdits ? asset.edits : [] };
+    const baseOptions = { colorspace, processInvalidImages: false, raw: info, edits: imageEdits };
     const thumbnailOptions = { ...image.thumbnail, ...baseOptions, format: thumbnailFormat };
     const previewOptions = { ...image.preview, ...baseOptions, format: previewFormat };
     const promises = [
@@ -380,10 +411,17 @@ export class MediaService extends BaseService {
     }
 
     const decodedDimensions = { width: info.width, height: info.height };
-    const fullsizeDimensions = useEdits ? getOutputDimensions(asset.edits, decodedDimensions) : decodedDimensions;
+    const fullsizeDimensions = useEdits ? getOutputDimensions(imageEdits, decodedDimensions) : decodedDimensions;
+
+    const baseFiles = fullsizeFile ? [previewFile, thumbnailFile, fullsizeFile] : [previewFile, thumbnailFile];
+    let files = baseFiles;
+    if (!useEdits && this.isAutoEnhanceEnabled()) {
+      const enhanced = await this.createAutoEnhancedImageFiles(asset, previewFile, thumbnailFile, image, isTransparent);
+      files = [...baseFiles, ...enhanced];
+    }
 
     return {
-      files: fullsizeFile ? [previewFile, thumbnailFile, fullsizeFile] : [previewFile, thumbnailFile],
+      files,
       thumbhash: outputs[0] as Buffer,
       fullsizeDimensions,
     };
@@ -524,8 +562,14 @@ export class MediaService extends BaseService {
       processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
     });
 
+    let files: UpsertFileOptions[] = [previewFile, thumbnailFile];
+    if (this.isAutoEnhanceEnabled()) {
+      const enhanced = await this.createAutoEnhancedImageFiles(asset, previewFile, thumbnailFile, image, false);
+      files = [...files, ...enhanced];
+    }
+
     return {
-      files: [previewFile, thumbnailFile],
+      files,
       thumbhash,
       fullsizeDimensions: { width: videoStream.width, height: videoStream.height },
     };
@@ -817,6 +861,14 @@ export class MediaService extends BaseService {
   }
 
   private async generateEditedThumbnails(asset: ThumbnailAsset, config: SystemConfig) {
+    if (asset.type === AssetType.Video) {
+      if (asset.edits.length === 0) {
+        return { files: [] };
+      }
+
+      return this.generateEditedVideoOutputs(asset, config);
+    }
+
     if (asset.type !== AssetType.Image || (asset.files.length === 0 && asset.edits.length === 0)) {
       return;
     }
@@ -846,11 +898,189 @@ export class MediaService extends BaseService {
     return generated;
   }
 
+  private async generateEditedVideoOutputs(asset: ThumbnailAsset, { ffmpeg, image }: SystemConfig) {
+    const transformFilters = getVideoTransformFilters(asset.edits);
+    if (transformFilters.length === 0) {
+      return;
+    }
+
+    const { videoStream, format } = asset;
+    const audioStream = asset.audioStream ?? undefined;
+    if (!videoStream || !format) {
+      throw new Error(`Missing video metadata for asset ${asset.id}`);
+    }
+
+    const previewFile = this.getImageFile(asset, {
+      fileType: AssetFileType.Preview,
+      format: image.preview.format,
+      isEdited: true,
+      isProgressive: false,
+      isTransparent: false,
+    });
+    const thumbnailFile = this.getImageFile(asset, {
+      fileType: AssetFileType.Thumbnail,
+      format: image.thumbnail.format,
+      isEdited: true,
+      isProgressive: false,
+      isTransparent: false,
+    });
+    this.storageCore.ensureFolders(previewFile.path);
+
+    const previewConfig = ThumbnailConfig.create({ ...ffmpeg, targetResolution: image.preview.size.toString() });
+    const thumbConfig = ThumbnailConfig.create({ ...ffmpeg, targetResolution: image.thumbnail.size.toString() });
+    let previewOptions = previewConfig.getCommand(TranscodeTarget.Video, videoStream, undefined, format ?? undefined);
+    let thumbnailOptions = thumbConfig.getCommand(TranscodeTarget.Video, videoStream, undefined, format ?? undefined);
+    previewOptions = appendVideoTransformToTranscodeCommand(previewOptions, transformFilters);
+    thumbnailOptions = appendVideoTransformToTranscodeCommand(thumbnailOptions, transformFilters);
+
+    await this.mediaRepository.transcode(asset.originalPath, previewFile.path, previewOptions);
+    await this.mediaRepository.transcode(asset.originalPath, thumbnailFile.path, thumbnailOptions);
+
+    const encodedPath = StorageCore.getEncodedVideoPath(asset, { isEdited: true });
+    this.storageCore.ensureFolders(encodedPath);
+
+    let transcodeConfig = ffmpeg;
+    let target = this.getTranscodeTarget(transcodeConfig, videoStream, audioStream);
+    if (target === TranscodeTarget.None) {
+      target = TranscodeTarget.Video;
+    }
+
+    let command = BaseConfig.create(transcodeConfig, this.videoInterfaces).getCommand(
+      target,
+      videoStream,
+      audioStream,
+    );
+    command = appendVideoTransformToTranscodeCommand(command, transformFilters);
+
+    try {
+      await this.mediaRepository.transcode(asset.originalPath, encodedPath, command);
+    } catch (error: any) {
+      this.logger.error(`Edited video transcode failed for ${asset.id}: ${error.message}`);
+      if (transcodeConfig.accel !== TranscodeHardwareAcceleration.Disabled) {
+        transcodeConfig = { ...transcodeConfig, accel: TranscodeHardwareAcceleration.Disabled };
+        command = BaseConfig.create(transcodeConfig, this.videoInterfaces).getCommand(target, videoStream, audioStream);
+        command = appendVideoTransformToTranscodeCommand(command, transformFilters);
+        await this.mediaRepository.transcode(asset.originalPath, encodedPath, command);
+      } else {
+        throw error;
+      }
+    }
+
+    const encodedFile: UpsertFileOptions = {
+      assetId: asset.id,
+      type: AssetFileType.EncodedVideo,
+      path: encodedPath,
+      isEdited: true,
+      isProgressive: false,
+      isTransparent: false,
+    };
+
+    const thumbhash = await this.mediaRepository.generateThumbhash(previewFile.path, {
+      colorspace: image.colorspace,
+      processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
+    });
+
+    const fullsizeDimensions = getOutputDimensions(asset.edits, {
+      width: videoStream.width ?? 0,
+      height: videoStream.height ?? 0,
+    });
+
+    return {
+      files: [previewFile, thumbnailFile, encodedFile],
+      thumbhash,
+      fullsizeDimensions,
+    };
+  }
+
+  /**
+   * Editor crop rectangles are authored against EXIF/original pixel dimensions.
+   * When Immich decodes a smaller RAW embedded JPEG (or any resized source), scale
+   * crop boxes into that source space so sharp.extract() does not throw extract_area.
+   */
+  private scaleEditsToDecodedSource(
+    edits: AssetEditActionItem[],
+    exifDimensions: ImageDimensions,
+    sourceDimensions: ImageDimensions,
+  ): AssetEditActionItem[] {
+    if (
+      !exifDimensions.width ||
+      !exifDimensions.height ||
+      !sourceDimensions.width ||
+      !sourceDimensions.height ||
+      (exifDimensions.width === sourceDimensions.width && exifDimensions.height === sourceDimensions.height)
+    ) {
+      return edits;
+    }
+
+    const scaleX = sourceDimensions.width / exifDimensions.width;
+    const scaleY = sourceDimensions.height / exifDimensions.height;
+
+    return edits.map((edit) => {
+      if (edit.action !== AssetEditAction.Crop) {
+        return edit;
+      }
+
+      const left = Math.max(0, Math.min(Math.round(edit.parameters.x * scaleX), sourceDimensions.width - 1));
+      const top = Math.max(0, Math.min(Math.round(edit.parameters.y * scaleY), sourceDimensions.height - 1));
+      const width = Math.max(1, Math.min(Math.round(edit.parameters.width * scaleX), sourceDimensions.width - left));
+      const height = Math.max(1, Math.min(Math.round(edit.parameters.height * scaleY), sourceDimensions.height - top));
+
+      return {
+        ...edit,
+        parameters: { x: left, y: top, width, height } satisfies CropParameters,
+      };
+    });
+  }
+
   private warnOnTransparencyLoss(isTransparent: boolean, format: ImageFormat, assetId: string) {
     if (isTransparent && format === ImageFormat.Jpeg) {
       this.logger.warn(
         `Asset ${assetId} has transparency but the configured format is ${format} which does not support it, consider using a format that does, such as ${ImageFormat.Webp}`,
       );
+    }
+  }
+
+  private isAutoEnhanceEnabled(): boolean {
+    return process.env.IMMICH_AUTO_ENHANCE === 'true';
+  }
+
+  private async createAutoEnhancedImageFiles(
+    asset: ThumbnailPathEntity,
+    previewFile: UpsertFileOptions,
+    thumbnailFile: UpsertFileOptions,
+    image: SystemConfig['image'],
+    isTransparent: boolean,
+  ): Promise<UpsertFileOptions[]> {
+    try {
+      const previewEnhanced = this.getImageFile(asset, {
+        fileType: AssetFileType.PreviewEnhanced,
+        format: image.preview.format,
+        isEdited: false,
+        isProgressive: !!image.preview.progressive && image.preview.format !== ImageFormat.Webp,
+        isTransparent,
+      });
+      const thumbnailEnhanced = this.getImageFile(asset, {
+        fileType: AssetFileType.ThumbnailEnhanced,
+        format: image.thumbnail.format,
+        isEdited: false,
+        isProgressive: !!image.thumbnail.progressive && image.thumbnail.format !== ImageFormat.Webp,
+        isTransparent,
+      });
+      this.storageCore.ensureFolders(previewEnhanced.path);
+      await this.mediaRepository.writeAutoEnhancedCopy(previewFile.path, previewEnhanced.path, {
+        format: image.preview.format,
+        quality: image.preview.quality,
+        progressive: !!image.preview.progressive,
+      });
+      await this.mediaRepository.writeAutoEnhancedCopy(thumbnailFile.path, thumbnailEnhanced.path, {
+        format: image.thumbnail.format,
+        quality: image.thumbnail.quality,
+        progressive: !!image.thumbnail.progressive,
+      });
+      return [previewEnhanced, thumbnailEnhanced];
+    } catch (error) {
+      this.logger.warn(`Auto-enhance failed for asset ${asset.id}: ${error}`);
+      return [];
     }
   }
 

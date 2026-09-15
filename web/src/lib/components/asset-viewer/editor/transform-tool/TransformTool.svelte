@@ -1,6 +1,8 @@
 <script lang="ts">
   import { shortcuts } from '$lib/actions/shortcut';
+  import { editManager } from '$lib/managers/edit/edit-manager.svelte';
   import { transformManager } from '$lib/managers/edit/transform-manager.svelte';
+  import { AssetTypeEnum } from '@immich/sdk';
   import { Button, HStack, IconButton } from '@immich/ui';
   import { mdiFlipHorizontal, mdiFlipVertical, mdiRotateLeft, mdiRotateRight } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -27,6 +29,7 @@
     { label: $t('crop_aspect_ratio_square'), value: '1:1', width: 20, height: 20 },
   ];
 
+  let isVideo = $derived(editManager.currentAsset?.type === AssetTypeEnum.Video);
   let isRotated = $derived(transformManager.normalizedRotation % 180 !== 0);
 
   function rotatedRatio(ratio: AspectRatioOption): string {
@@ -110,12 +113,13 @@
     />
   </HStack>
 
-  <div class="mt-6 flex h-10 w-full items-center justify-between text-sm">
-    <h2>{$t('crop')}</h2>
-  </div>
+  {#if !isVideo}
+    <div class="mt-6 flex h-10 w-full items-center justify-between text-sm">
+      <h2>{$t('crop')}</h2>
+    </div>
 
-  <!-- Aspect Ratio Grid -->
-  <div class="mb-4 grid grid-cols-2">
+    <!-- Aspect Ratio Grid -->
+    <div class="mb-4 grid grid-cols-2">
     {#each aspectRatios as ratio (ratio.value)}
       <HStack>
         <Button
@@ -144,5 +148,6 @@
         <span class="text-sm text-white">{ratio.label}</span>
       </HStack>
     {/each}
-  </div>
+    </div>
+  {/if}
 </div>

@@ -1,11 +1,13 @@
 <script lang="ts">
   import { shortcut } from '$lib/actions/shortcut';
   import AlbumMap from '$lib/components/album-page/AlbumMap.svelte';
+  import SharedLinkFilters from '$lib/components/share-page/SharedLinkFilters.svelte';
   import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
   import SelectAllAssets from '$lib/components/timeline/actions/SelectAllAction.svelte';
   import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
   import Timeline from '$lib/components/timeline/Timeline.svelte';
   import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
+  import { authManager } from '$lib/managers/auth-manager.svelte';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
@@ -13,12 +15,21 @@
   import { getGlobalActions } from '$lib/services/app.service';
   import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
+  import { preferUnenhancedSharedThumbnails } from '$lib/stores/preferences.store';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { handlePromiseError } from '$lib/utils';
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
-  import type { AlbumResponseDto, SharedLinkResponseDto } from '@immich/sdk';
-  import { ActionButton, IconButton, Logo } from '@immich/ui';
-  import { mdiDownload, mdiFileImagePlusOutline, mdiPresentationPlay } from '@mdi/js';
+  import type { SharedLinkFilter } from '$lib/types';
+  import {
+    locationOptionsFromMapMarkers,
+    toTimelineFilterOptions,
+  } from '$lib/utils/shared-link-filters';
+  import { canUploadToSharedLink, ensureSharedLinkContributorInfo, ensureSharedLinkUploadAccess } from '$lib/utils/shared-link-upload';
+  import { getAlbumMapMarkers, type AlbumResponseDto, type MapMarkerResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
+  import { ActionButton, IconButton } from '@immich/ui';
+  import GalleryLogo from '$lib/components/shared-components/GalleryLogo.svelte';
+  import { mdiFileImagePlusOutline, mdiPresentationPlay } from '@mdi/js';
+  import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
   import ControlAppBar from '../shared-components/ControlAppBar.svelte';
   import ThemeButton from '../shared-components/ThemeButton.svelte';
@@ -31,18 +42,62 @@
   let { sharedLink }: Props = $props();
 
   const album = sharedLink.album as AlbumResponseDto;
+  const canUpload = $derived(canUploadToSharedLink(sharedLink));
+
+  let filters = $state<SharedLinkFilter>({});
+  let mapMarkers = $state<MapMarkerResponseDto[]>([]);
+  const locationOptions = $derived(locationOptionsFromMapMarkers(mapMarkers));
 
   let { slideshowState, slideshowNavigation } = slideshowStore;
 
-  const options = $derived({ albumId: album.id, order: album.order });
+  const options = $derived({
+    albumId: album.id,
+    order: album.order,
+    ...toTimelineFilterOptions(filters),
+  });
   let timelineManager = $state<TimelineManager>() as TimelineManager;
+
+  onMount(async () => {
+    if (!sharedLink.showMetadata) {
+      return;
+    }
+
+    try {
+      mapMarkers = await getAlbumMapMarkers({ ...authManager.params, id: album.id });
+    } catch {
+      mapMarkers = [];
+    }
+  });
+
+  const startUpload = async (files?: File[]) => {
+    if (!(await ensureSharedLinkUploadAccess(sharedLink))) {
+      return;
+    }
+
+    const contributor = await ensureSharedLinkContributorInfo(sharedLink);
+    if (!contributor) {
+      return;
+    }
+
+    if (files?.length) {
+      await fileUploadHandler({ files, albumId: album.id, contributor });
+      return;
+    }
+
+    await openFileUploadDialog({ albumId: album.id, contributor });
+  };
 
   dragAndDropFilesStore.subscribe((value) => {
     if (!(value.isDragging && value.files.length > 0)) {
       return;
     }
 
-    handlePromiseError(fileUploadHandler({ files: value.files, albumId: album.id }));
+    if (!canUploadToSharedLink(sharedLink)) {
+      dragAndDropFilesStore.set({ isDragging: false, files: [] });
+      return;
+    }
+
+    handlePromiseError(startUpload(value.files));
     dragAndDropFilesStore.set({ isDragging: false, files: [] });
   });
 
@@ -92,6 +147,15 @@
           {album.description}
         </p>
       {/if}
+
+      {#if album.assetCount > 0}
+        <SharedLinkFilters
+          bind:filters
+          showLocation={sharedLink.showMetadata}
+          {locationOptions}
+          {mapMarkers}
+        />
+      {/if}
     </section>
   </Timeline>
 </main>
@@ -108,20 +172,20 @@
     <ControlAppBar>
       {#snippet leading()}
         <a data-sveltekit-preload-data="hover" class="ms-4" href="/">
-          <Logo variant={mediaQueryManager.maxMd ? 'icon' : 'inline'} class="min-w-10" />
+          <GalleryLogo variant="inline" class="min-w-10 max-md:text-sm" />
         </a>
       {/snippet}
 
       {#snippet trailing()}
         <ActionButton action={Cast} />
 
-        {#if sharedLink.allowUpload}
+        {#if canUpload}
           <IconButton
             shape="round"
             color="secondary"
             variant="ghost"
             aria-label={$t('add_photos')}
-            onclick={() => openFileUploadDialog({ albumId: album.id })}
+            onclick={() => handlePromiseError(startUpload())}
             icon={mdiFileImagePlusOutline}
           />
         {/if}
@@ -135,19 +199,40 @@
             onclick={handleStartSlideshow}
             icon={mdiPresentationPlay}
           />
-          <IconButton
-            shape="round"
-            color="secondary"
-            variant="ghost"
-            aria-label={$t('download')}
-            onclick={() => handleDownloadAlbum(album)}
-            icon={mdiDownload}
-          />
+          <div class="flex items-center gap-1">
+            <button
+              type="button"
+              class="inline-flex items-center rounded-full border border-white/50 bg-white/20 px-2.5 py-1 text-[11px] font-bold tracking-wide text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-white/35"
+              aria-label={`${$t('download')} JPG`}
+              title={`${$t('download')} JPG`}
+              onclick={() => handleDownloadAlbum(album, 'jpg')}
+            >
+              JPG
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center rounded-full border border-amber-200/70 bg-amber-500/30 px-2.5 py-1 text-[11px] font-bold tracking-wide text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-amber-500/45"
+              aria-label={`${$t('download')} RAW`}
+              title={`${$t('download')} RAW`}
+              onclick={() => handleDownloadAlbum(album, 'raw')}
+            >
+              RAW
+            </button>
+          </div>
         {/if}
         {#if sharedLink.showMetadata && featureFlagsManager.value.map}
           <AlbumMap {album} />
         {/if}
         <ThemeButton />
+        <button
+          type="button"
+          class="rounded-full border px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-gray-200/70 dark:hover:bg-gray-700/60"
+          aria-label={$t('toggle_shared_standard_previews')}
+          title={$t('toggle_shared_standard_previews')}
+          onclick={() => ($preferUnenhancedSharedThumbnails = !$preferUnenhancedSharedThumbnails)}
+        >
+          {$preferUnenhancedSharedThumbnails ? $t('view_mode_standard') : $t('view_mode_enhanced')}
+        </button>
       {/snippet}
     </ControlAppBar>
   {/if}

@@ -33,7 +33,9 @@
           <div class="min-w-0 grow">
             <div class="flex place-items-center justify-between gap-2 text-xs font-medium">
               <p class="truncate">{downloadKey}</p>
-              {#if download.total}
+              {#if download.total && download.unit === 'items'}
+                <p class="whitespace-nowrap">{download.progress}/{download.total}</p>
+              {:else if download.total}
                 <p class="whitespace-nowrap">{getByteUnitString(download.total, $locale)}</p>
               {/if}
             </div>

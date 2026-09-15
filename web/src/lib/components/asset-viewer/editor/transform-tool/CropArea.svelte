@@ -62,17 +62,18 @@
 
 <div class="flex size-full flex-col items-center justify-center p-8" bind:this={canvasContainer}>
   <div
-    class="crop-area max-h-full max-w-full transition-transform motion-reduce:transition-none"
+    class="crop-area relative max-h-full max-w-full transition-transform motion-reduce:transition-none"
     class:rotated={transformManager.normalizedRotation % 180 > 0}
     style:rotate={transformManager.imageRotation + 'deg'}
     bind:this={transformManager.cropAreaEl}
     aria-label="Crop area"
   >
     <img
+      bind:this={transformManager.imgElement}
       draggable="false"
       src={imageSrc}
       alt={$getAltText(toTimelineAsset(asset))}
-      class="h-full transition-transform select-none motion-reduce:transition-none"
+      class="h-auto max-h-none w-auto max-w-none transition-transform select-none motion-reduce:transition-none"
       style:transform={imageTransform}
     />
     <div
@@ -86,18 +87,18 @@
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         class={[
-          'grid size-full cursor-move transition-opacity motion-reduce:transition-none',
+          'grid size-full cursor-move touch-none transition-opacity motion-reduce:transition-none',
           transformManager.isInteracting ? 'opacity-100' : 'opacity-0',
         ]}
-        onmousedown={(e) => transformManager.handleMouseDownOn(e, ResizeBoundary.None)}
+        onpointerdown={(e) => transformManager.handlePointerDownOn(e, ResizeBoundary.None)}
       ></div>
 
       {#each edges as edge (edge)}
         {@const rotatedEdge = rotateBoundary(edges, edge, transformManager.normalizedRotation / 90)}
         <button
-          class={['absolute', edge]}
+          class={['absolute touch-none', edge]}
           style={`${edge}: -10px`}
-          onmousedown={(e) => transformManager.handleMouseDownOn(e, edge)}
+          onpointerdown={(e) => transformManager.handlePointerDownOn(e, edge)}
           type="button"
           aria-label={$t('editor_handle_edge', { values: { edge: rotatedEdge } })}
         ></button>
@@ -106,8 +107,8 @@
       {#each corners as corner (corner)}
         {@const rotatedCorner = rotateBoundary(corners, corner, transformManager.normalizedRotation / 90)}
         <button
-          class={['corner', corner]}
-          onmousedown={(e) => transformManager.handleMouseDownOn(e, corner)}
+          class={['corner touch-none', corner]}
+          onpointerdown={(e) => transformManager.handlePointerDownOn(e, corner)}
           type="button"
           aria-label={$t('editor_handle_corner', { values: { corner: rotatedCorner.replace('-', '_') } })}
         >
@@ -179,9 +180,14 @@
     rotate: 270deg;
   }
 
+  /*
+   * After CSS rotate(90/270), layout box stays axis-aligned; swap viewport constraints
+   * so the visual still fits. Avoid hardcoding a 400px sidebar — on mobile that collapses
+   * the preview (100vw - 400px).
+   */
   .crop-area.rotated {
-    max-width: calc(100vh - 16 * var(--spacing));
-    max-height: calc(100vw - 400px - 16 * var(--spacing));
+    max-width: calc(100dvh - var(--editor-inset, 0px) - 8rem);
+    max-height: calc(100dvw - 2rem);
 
     .left,
     .right {
@@ -198,6 +204,13 @@
     .top-right,
     .bottom-left {
       cursor: nwse-resize;
+    }
+  }
+
+  @media (min-width: 768px) {
+    .crop-area.rotated {
+      max-width: calc(100vh - 16 * var(--spacing));
+      max-height: calc(100vw - 400px - 16 * var(--spacing));
     }
   }
 </style>

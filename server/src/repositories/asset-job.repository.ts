@@ -138,8 +138,10 @@ export class AssetJobRepository {
       .select(withEdits)
       .$call(withExifInner)
       .leftJoin('asset_video', 'asset_video.assetId', 'asset.id')
+      .leftJoin('asset_audio', 'asset_audio.assetId', 'asset.id')
       .select((eb) => withVideoStream(eb).as('videoStream'))
       .select((eb) => withVideoFormat(eb).as('format'))
+      .select((eb) => withAudioStream(eb).as('audioStream'))
       .where('asset.id', '=', id)
       .executeTakeFirst();
   }

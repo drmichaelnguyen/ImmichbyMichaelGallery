@@ -136,7 +136,9 @@
         <div class="mb-4">
           <HStack class="mb-2 justify-between">
             <Text size="medium" fontWeight="semi-bold">{$t('shared_links')}</Text>
-            <HeaderActionButton action={CreateSharedLink} />
+            <div class="flex items-center gap-1">
+              <HeaderActionButton action={CreateSharedLink} />
+            </div>
           </HStack>
 
           <div class="ps-2">

@@ -25,8 +25,14 @@ const SharedLinkCreateSchema = z
     albumId: z.uuidv4().optional().describe('Album ID (for album sharing)'),
     description: z.string().nullable().optional().describe('Link description'),
     password: z.string().nullable().optional().describe('Link password'),
+    uploadPassword: z.string().nullable().optional().describe('Password required to upload contributions'),
     slug: z.string().nullable().optional().describe('Custom URL slug'),
     expiresAt: isoDatetimeToDate.nullable().describe('Expiration date').default(null).optional(),
+    uploadExpiresAt: isoDatetimeToDate
+      .nullable()
+      .describe('Upload contribution window expiration')
+      .default(null)
+      .optional(),
     allowUpload: z.boolean().optional().describe('Allow uploads'),
     allowDownload: z.boolean().default(true).optional().describe('Allow downloads'),
     showMetadata: z.boolean().default(true).optional().describe('Show metadata'),
@@ -60,8 +66,10 @@ const SharedLinkEditSchema = z
   .object({
     description: z.string().nullable().optional().describe('Link description'),
     password: z.string().nullable().optional().describe('Link password'),
+    uploadPassword: z.string().nullable().optional().describe('Password required to upload contributions'),
     slug: z.string().nullable().optional().describe('Custom URL slug'),
     expiresAt: isoDatetimeToDate.nullish().describe('Expiration date'),
+    uploadExpiresAt: isoDatetimeToDate.nullish().describe('Upload contribution window expiration'),
     allowUpload: z.boolean().optional().describe('Allow uploads'),
     allowDownload: z.boolean().optional().describe('Allow downloads'),
     showMetadata: z.boolean().optional().describe('Show metadata'),
@@ -79,11 +87,14 @@ const SharedLinkResponseSchema = z
     id: z.uuidv4().describe('Shared link ID'),
     description: z.string().nullable().describe('Link description'),
     password: z.string().nullable().describe('Has password'),
+    uploadPassword: z.string().nullable().describe('Upload password (owners only; null for public viewers)'),
+    hasUploadPassword: z.boolean().describe('Whether contributing requires an upload password'),
     userId: z.uuidv4().describe('Owner user ID'),
     key: z.string().describe('Encryption key (base64url)'),
     type: SharedLinkTypeSchema,
     createdAt: isoDatetimeToDate.describe('Creation date'),
     expiresAt: isoDatetimeToDate.nullable().describe('Expiration date'),
+    uploadExpiresAt: isoDatetimeToDate.nullable().describe('Upload contribution window expiration'),
     assets: z.array(AssetResponseSchema),
     album: AlbumResponseSchema.optional(),
     allowUpload: z.boolean().describe('Allow uploads'),
@@ -100,18 +111,25 @@ export class SharedLinkEditDto extends createZodDto(SharedLinkEditSchema) {}
 export class SharedLinkLoginDto extends createZodDto(SharedLinkLoginSchema) {}
 export class SharedLinkResponseDto extends createZodDto(SharedLinkResponseSchema) {}
 
-export function mapSharedLink(sharedLink: SharedLink, options: { stripAssetMetadata: boolean }): SharedLinkResponseDto {
+export function mapSharedLink(
+  sharedLink: SharedLink,
+  options: { stripAssetMetadata: boolean; includeUploadPassword?: boolean },
+): SharedLinkResponseDto {
   const assets = sharedLink.assets || [];
+  const hasUploadPassword = !!sharedLink.uploadPassword;
 
   const response = {
     id: sharedLink.id,
     description: sharedLink.description,
     password: sharedLink.password,
+    uploadPassword: options.includeUploadPassword ? sharedLink.uploadPassword : null,
+    hasUploadPassword,
     userId: sharedLink.userId,
     key: sharedLink.key.toString('base64url'),
     type: sharedLink.type,
     createdAt: sharedLink.createdAt,
     expiresAt: sharedLink.expiresAt,
+    uploadExpiresAt: sharedLink.uploadExpiresAt,
     assets: assets.map((asset) => mapAsset(asset, { stripMetadata: options.stripAssetMetadata })),
     album: sharedLink.album ? mapAlbum(sharedLink.album) : undefined,
     allowUpload: sharedLink.allowUpload,

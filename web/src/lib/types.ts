@@ -61,6 +61,14 @@ export type SearchLocationFilter = {
   city?: string;
 };
 
+export type SharedLinkFilter = {
+  takenAfter?: DateTime;
+  takenBefore?: DateTime;
+  country?: string;
+  city?: string;
+  bbox?: string;
+};
+
 export type SearchFilter = {
   query: string;
   ocr?: string;

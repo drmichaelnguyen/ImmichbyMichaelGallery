@@ -289,6 +289,12 @@ export const handleDeleteAlbum = async (album: AlbumResponseDto, options?: { pro
   }
 };
 
-export const handleDownloadAlbum = async (album: AlbumResponseDto) => {
-  await downloadArchive(album.albumName, { albumId: album.id });
+export const handleDownloadAlbum = async (album: AlbumResponseDto, format: 'jpg' | 'raw' = 'raw') => {
+  const safeAlbumName = album.albumName || 'album';
+  if (format === 'jpg') {
+    await downloadArchive(`${safeAlbumName}-jpg.zip`, { albumId: album.id, edited: true, downloadFormat: 'jpg' });
+    return;
+  }
+
+  await downloadArchive(`${safeAlbumName}-raw.zip`, { albumId: album.id, edited: false, downloadFormat: 'original' });
 };

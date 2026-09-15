@@ -20,8 +20,9 @@ export class SharedLinkService extends BaseService {
   async getAll(auth: AuthDto, { id, albumId }: SharedLinkSearchDto): Promise<SharedLinkResponseDto[]> {
     return this.sharedLinkRepository
       .getAll({ userId: auth.user.id, id, albumId })
-
-      .then((links) => links.map((link) => mapSharedLink(link, { stripAssetMetadata: false })));
+      .then((links) =>
+        links.map((link) => mapSharedLink(link, { stripAssetMetadata: false, includeUploadPassword: true })),
+      );
   }
 
   async login(auth: AuthDto, dto: SharedLinkLoginDto) {
@@ -46,6 +47,32 @@ export class SharedLinkService extends BaseService {
     };
   }
 
+  async uploadLogin(auth: AuthDto, dto: SharedLinkLoginDto) {
+    if (!auth.sharedLink) {
+      throw new ForbiddenException();
+    }
+
+    const sharedLink = await this.findOrFail(auth.user.id, auth.sharedLink.id);
+    const { id, uploadPassword } = sharedLink;
+
+    if (!sharedLink.allowUpload) {
+      throw new BadRequestException('Shared link does not allow uploads');
+    }
+
+    if (!uploadPassword) {
+      throw new BadRequestException('Shared link does not require an upload password');
+    }
+
+    if (uploadPassword !== dto.password) {
+      throw new UnauthorizedException('Invalid password');
+    }
+
+    return {
+      sharedLink: mapSharedLink(sharedLink, { stripAssetMetadata: !sharedLink.showExif }),
+      token: this.asUploadToken({ id, uploadPassword }),
+    };
+  }
+
   async getMine(auth: AuthDto, authTokens: string[]) {
     if (!auth.sharedLink) {
       throw new ForbiddenException();
@@ -63,7 +90,7 @@ export class SharedLinkService extends BaseService {
 
   async get(auth: AuthDto, id: string): Promise<SharedLinkResponseDto> {
     const sharedLink = await this.findOrFail(auth.user.id, id);
-    return mapSharedLink(sharedLink, { stripAssetMetadata: false });
+    return mapSharedLink(sharedLink, { stripAssetMetadata: false, includeUploadPassword: true });
   }
 
   async create(auth: AuthDto, dto: SharedLinkCreateDto): Promise<SharedLinkResponseDto> {
@@ -87,6 +114,9 @@ export class SharedLinkService extends BaseService {
       }
     }
 
+    const allowUpload = dto.allowUpload ?? true;
+    const uploadPassword = allowUpload ? this.normalizeOptionalPassword(dto.uploadPassword) : null;
+
     try {
       const sharedLink = await this.sharedLinkRepository.create({
         key: this.cryptoRepository.randomBytes(50),
@@ -96,14 +126,16 @@ export class SharedLinkService extends BaseService {
         assetIds: dto.assetIds,
         description: dto.description || null,
         password: dto.password,
+        uploadPassword,
         expiresAt: dto.expiresAt || null,
-        allowUpload: dto.allowUpload ?? true,
+        uploadExpiresAt: allowUpload ? dto.uploadExpiresAt || null : null,
+        allowUpload,
         allowDownload: dto.showMetadata === false ? false : (dto.allowDownload ?? true),
         showExif: dto.showMetadata ?? true,
         slug: dto.slug || null,
       });
 
-      return mapSharedLink(sharedLink, { stripAssetMetadata: false });
+      return mapSharedLink(sharedLink, { stripAssetMetadata: false, includeUploadPassword: true });
     } catch (error) {
       this.handleError(error);
     }
@@ -119,19 +151,29 @@ export class SharedLinkService extends BaseService {
 
   async update(auth: AuthDto, id: string, dto: SharedLinkEditDto) {
     await this.findOrFail(auth.user.id, id);
+    const allowUpload = dto.allowUpload;
+    const uploadPassword =
+      allowUpload === false
+        ? null
+        : dto.uploadPassword === undefined
+          ? undefined
+          : this.normalizeOptionalPassword(dto.uploadPassword);
+
     try {
       const sharedLink = await this.sharedLinkRepository.update({
         id,
         userId: auth.user.id,
         description: dto.description,
         password: dto.password,
+        uploadPassword,
         expiresAt: dto.expiresAt,
+        uploadExpiresAt: allowUpload === false ? null : dto.uploadExpiresAt,
         allowUpload: dto.allowUpload,
         allowDownload: dto.allowDownload,
         showExif: dto.showMetadata,
         slug: dto.slug || null,
       });
-      return mapSharedLink(sharedLink, { stripAssetMetadata: false });
+      return mapSharedLink(sharedLink, { stripAssetMetadata: false, includeUploadPassword: true });
     } catch (error) {
       this.handleError(error);
     }
@@ -232,7 +274,22 @@ export class SharedLinkService extends BaseService {
     };
   }
 
+  private normalizeOptionalPassword(password: string | null | undefined): string | null {
+    if (password == null) {
+      return null;
+    }
+
+    const trimmed = password.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
   private asToken(sharedLink: { id: string; password: string }) {
     return this.cryptoRepository.hashSha256(`${sharedLink.id}-${sharedLink.password}`).toString('base64');
+  }
+
+  private asUploadToken(sharedLink: { id: string; uploadPassword: string }) {
+    return this.cryptoRepository
+      .hashSha256(`${sharedLink.id}-upload-${sharedLink.uploadPassword}`)
+      .toString('base64');
   }
 }

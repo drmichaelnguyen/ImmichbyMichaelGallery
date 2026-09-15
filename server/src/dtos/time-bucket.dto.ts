@@ -61,6 +61,16 @@ const TimeBucketQueryBaseSchema = z
       .optional()
       .describe('Bounding box coordinates as west,south,east,north (WGS84)')
       .meta({ example: '11.075683,49.416711,11.117589,49.454875' }),
+    takenAfter: z.iso
+      .date()
+      .optional()
+      .describe('Include assets taken on or after this date (YYYY-MM-DD)'),
+    takenBefore: z.iso
+      .date()
+      .optional()
+      .describe('Include assets taken on or before this date (YYYY-MM-DD)'),
+    city: z.string().optional().describe('Filter by city name'),
+    country: z.string().optional().describe('Filter by country name'),
   })
   .meta({ id: 'TimeBucketDto' });
 

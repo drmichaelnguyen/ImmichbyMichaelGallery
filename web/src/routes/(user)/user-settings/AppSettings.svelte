@@ -10,6 +10,7 @@
     locale,
     loopVideo,
     playVideoThumbnailOnHover,
+    preferUnenhancedThumbnails,
     showDeleteModal,
   } from '$lib/stores/preferences.store';
   import { createDateFormatter, findLocale } from '$lib/utils';
@@ -91,6 +92,13 @@
 
       <Field label={$t('display_original_photos')} description={$t('display_original_photos_setting_description')}>
         <Switch bind:checked={$alwaysLoadOriginalFile} />
+      </Field>
+
+      <Field
+        label={$t('prefer_unenhanced_previews')}
+        description={$t('prefer_unenhanced_previews_description')}
+      >
+        <Switch bind:checked={$preferUnenhancedThumbnails} />
       </Field>
 
       <Field label={$t('video_hover_setting')} description={$t('video_hover_setting_description')}>

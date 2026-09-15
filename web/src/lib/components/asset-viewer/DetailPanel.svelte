@@ -20,6 +20,7 @@
     AssetMediaSize,
     getAllAlbums,
     getAssetInfo,
+    getAssetMetadataByKey,
     type AlbumResponseDto,
     type AssetResponseDto,
   } from '@immich/sdk';
@@ -34,6 +35,7 @@
   import AlbumListItemDetails from './AlbumListItemDetails.svelte';
   import DetailPanelPeople from '$lib/components/asset-viewer/DetailPanelPeople.svelte';
   import { faceManager } from '$lib/stores/face.svelte';
+  import { GUEST_CONTRIBUTOR_METADATA_KEY } from '$lib/utils/shared-link-upload';
 
   interface Props {
     asset: AssetResponseDto;
@@ -43,6 +45,7 @@
   let { asset, currentAlbum = null }: Props = $props();
 
   let isOwner = $derived(authManager.authenticated && authManager.user.id === asset.ownerId);
+  let guestContributor = $state<{ name: string; email: string } | null>(null);
   let latlng = $derived(
     (() => {
       const lat = asset.exifInfo?.latitude;
@@ -70,6 +73,36 @@
   };
 
   let albums = $derived(refreshAlbums());
+
+  $effect(() => {
+    const assetId = asset.id;
+    guestContributor = null;
+
+    if (!authManager.authenticated || authManager.isSharedLink) {
+      return;
+    }
+
+    let cancelled = false;
+    void getAssetMetadataByKey({ id: assetId, key: GUEST_CONTRIBUTOR_METADATA_KEY })
+      .then((metadata) => {
+        if (cancelled) {
+          return;
+        }
+
+        const name = typeof metadata.value?.name === 'string' ? metadata.value.name : '';
+        const email = typeof metadata.value?.email === 'string' ? metadata.value.email : '';
+        guestContributor = name || email ? { name, email } : null;
+      })
+      .catch(() => {
+        if (!cancelled) {
+          guestContributor = null;
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  });
 
   $effect(() => {
     if (!previousId) {
@@ -322,6 +355,18 @@
         </Map>
       {/await}
     </div>
+  {/if}
+
+  {#if guestContributor}
+    <section class="mt-4 px-6 dark:text-immich-dark-fg">
+      <Text size="small" color="muted">{$t('contributed_by')}</Text>
+      <div class="pt-2">
+        <p class="text-sm font-medium text-black dark:text-white">{guestContributor.name}</p>
+        {#if guestContributor.email}
+          <p class="text-sm text-gray-600 dark:text-gray-300">{guestContributor.email}</p>
+        {/if}
+      </div>
+    </section>
   {/if}
 
   {#if currentAlbum && currentAlbum.albumUsers.length > 1 && asset.owner}

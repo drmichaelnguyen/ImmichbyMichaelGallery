@@ -18,6 +18,7 @@
   import { getAssetActions } from '$lib/services/asset.service';
   import { faceManager } from '$lib/stores/face.svelte';
   import { ocrManager } from '$lib/stores/ocr.svelte';
+  import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { alwaysLoadOriginalVideo } from '$lib/stores/preferences.store';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { getSharedLink, handlePromiseError } from '$lib/utils';
@@ -48,6 +49,7 @@
   import DetailPanel from './DetailPanel.svelte';
   import EditorPanel from './editor/EditorPanel.svelte';
   import CropArea from './editor/transform-tool/CropArea.svelte';
+  import LocalMaskArea from './editor/local-tool/LocalMaskArea.svelte';
   import ImagePanoramaViewer from './ImagePanoramaViewer.svelte';
   import OcrButton from './OcrButton.svelte';
   import PhotoViewer from './PhotoViewer.svelte';
@@ -447,6 +449,9 @@
     if (assetViewerManager.isShowEditor && editManager.selectedTool?.type === EditToolType.Transform) {
       return 'CropArea';
     }
+    if (assetViewerManager.isShowEditor && editManager.selectedTool?.type === EditToolType.Local) {
+      return 'LocalMaskArea';
+    }
     return 'PhotoViewer';
   });
 
@@ -470,6 +475,16 @@
       $slideshowState === SlideshowState.None &&
       assetViewerManager.isShowDetailPanel &&
       !assetViewerManager.isShowEditor,
+  );
+
+  const isMobileEditor = $derived(mediaQueryManager.maxMd && assetViewerManager.isShowEditor);
+
+  const mobileEditorInset = $derived(
+    editManager.selectedTool?.type === EditToolType.Transform
+      ? 'min(42dvh,400px)'
+      : editManager.selectedTool?.type === EditToolType.Local
+        ? 'min(56dvh,520px)'
+        : 'min(52dvh,480px)',
   );
 
   const onSwipe = (event: SwipeCustomEvent) => {
@@ -545,7 +560,16 @@
   {/if}
 
   <!-- Asset Viewer -->
-  <div data-viewer-content class="relative z-[-1] col-span-4 col-start-1 row-span-full row-start-1">
+  <div
+    data-viewer-content
+    class={[
+      'relative col-span-4 col-start-1 row-span-full row-start-1 transition-[padding] duration-200',
+      // Keep crop handles clickable while editing; otherwise sit behind chrome.
+      assetViewerManager.isShowEditor ? 'z-0' : 'z-[-1]',
+      isMobileEditor && 'pb-[var(--editor-inset)]',
+    ]}
+    style:--editor-inset={mobileEditorInset}
+  >
     {#if viewerKind === 'StackVideoViewer'}
       <VideoViewer
         asset={previewStackedAsset!}
@@ -575,6 +599,8 @@
       <ImagePanoramaViewer {asset} />
     {:else if viewerKind === 'CropArea'}
       <CropArea {asset} />
+    {:else if viewerKind === 'LocalMaskArea'}
+      <LocalMaskArea {asset} />
     {:else if viewerKind === 'PhotoViewer'}
       <PhotoViewer cursor={{ ...cursor, current: asset }} {sharedLink} {onSwipe} />
     {:else if viewerKind === 'VideoViewer'}
@@ -622,21 +648,34 @@
     </div>
   {/if}
 
-  {#if showDetailPanel || assetViewerManager.isShowEditor}
+  {#if showDetailPanel}
     <div
       transition:fly={{ duration: 150 }}
       id="detail-panel"
-      class={[
-        'row-span-4 row-start-1 overflow-y-auto bg-light transition-all dark:border-l dark:border-s-immich-dark-gray',
-        showDetailPanel ? 'w-90' : 'w-100',
-      ]}
+      class="row-span-4 row-start-1 w-90 overflow-y-auto bg-light transition-all dark:border-l dark:border-s-immich-dark-gray"
       translate="yes"
     >
-      {#if showDetailPanel}
-        <DetailPanel {asset} currentAlbum={album} />
-      {:else if assetViewerManager.isShowEditor}
-        <EditorPanel {asset} onClose={closeEditor} />
+      <DetailPanel {asset} currentAlbum={album} />
+    </div>
+  {/if}
+
+  {#if assetViewerManager.isShowEditor}
+    <div
+      transition:fly={{ duration: 200, y: isMobileEditor ? 320 : 0, x: isMobileEditor ? 0 : 120 }}
+      id="editor-panel"
+      class={[
+        'z-10 flex flex-col overflow-hidden bg-light dark:bg-immich-dark-bg',
+        isMobileEditor
+          ? 'fixed inset-x-0 bottom-0 max-h-[var(--editor-inset)] rounded-t-2xl border-t border-white/10 pb-[env(safe-area-inset-bottom)] shadow-[0_-10px_40px_rgba(0,0,0,0.5)]'
+          : 'row-span-4 row-start-1 w-100 overflow-y-auto dark:border-l dark:border-s-immich-dark-gray',
+      ]}
+      style:--editor-inset={mobileEditorInset}
+      translate="yes"
+    >
+      {#if isMobileEditor}
+        <div class="mx-auto mt-2 mb-1 h-1 w-10 shrink-0 rounded-full bg-white/25" aria-hidden="true"></div>
       {/if}
+      <EditorPanel {asset} onClose={closeEditor} compact={isMobileEditor} />
     </div>
   {/if}
 

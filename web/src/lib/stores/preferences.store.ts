@@ -127,6 +127,11 @@ export const showDeleteModal = persisted<boolean>('delete-confirm-dialog', true,
 
 export const alwaysLoadOriginalFile = persisted<boolean>('always-load-original-file', false, {});
 
+/** When true, thumbnails/previews use standard processing (skip auto-enhanced derivatives if the server provides them). */
+export const preferUnenhancedThumbnails = persisted<boolean>('prefer-unenhanced-thumbnails', false, {});
+/** Shared-link specific variant of the unenhanced preference (for public/shared pages). */
+export const preferUnenhancedSharedThumbnails = persisted<boolean>('prefer-unenhanced-shared-thumbnails', false, {});
+
 export const playVideoThumbnailOnHover = persisted<boolean>('play-video-thumbnail-on-hover', true, {});
 
 export const loopVideo = persisted<boolean>('loop-video', true, {});

@@ -34,6 +34,9 @@ export class SharedLinkTable {
   @Column({ type: 'timestamp with time zone', nullable: true })
   expiresAt!: Timestamp | null;
 
+  @Column({ type: 'timestamp with time zone', nullable: true })
+  uploadExpiresAt!: Timestamp | null;
+
   @Column({ type: 'boolean', default: false })
   allowUpload!: boolean;
 
@@ -48,6 +51,9 @@ export class SharedLinkTable {
 
   @Column({ type: 'character varying', nullable: true })
   password!: string | null;
+
+  @Column({ type: 'character varying', nullable: true })
+  uploadPassword!: string | null;
 
   @Column({ type: 'character varying', nullable: true, unique: true })
   slug!: string | null;

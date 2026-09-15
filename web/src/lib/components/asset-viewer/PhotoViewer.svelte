@@ -7,6 +7,8 @@
   import AssetViewerEvents from '$lib/components/AssetViewerEvents.svelte';
   import Thumbhash from '$lib/components/Thumbhash.svelte';
   import { assetViewerManager, type Faces } from '$lib/managers/asset-viewer-manager.svelte';
+  import { colorManager } from '$lib/managers/edit/color-manager.svelte';
+  import { cssFilterFromColorAdjust } from '$lib/utils/color-adjust';
   import { castManager } from '$lib/managers/cast-manager.svelte';
   import { faceManager } from '$lib/stores/face.svelte';
   import { ocrManager } from '$lib/stores/ocr.svelte';
@@ -154,6 +156,13 @@
     $slideshowState !== SlideshowState.None && $slideshowLook === SlideshowLook.BlurredBackground && !!asset.thumbhash,
   );
 
+  const editorColorFilter = $derived.by(() => {
+    if (!assetViewerManager.isShowEditor) {
+      return undefined;
+    }
+    return cssFilterFromColorAdjust(colorManager.previewFilter);
+  });
+
   let adaptiveImage = $state<HTMLDivElement | undefined>();
 
   const faceToNameMap = $derived.by(() => {
@@ -226,6 +235,7 @@
     {sharedLink}
     {container}
     objectFit={$slideshowState !== SlideshowState.None && $slideshowLook === SlideshowLook.Cover ? 'cover' : 'contain'}
+    imageFilter={editorColorFilter}
     {onUrlChange}
     onImageReady={() => {
       visibleImageReady = true;

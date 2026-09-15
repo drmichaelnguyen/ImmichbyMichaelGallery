@@ -13,8 +13,10 @@ describe('SharedLinkFormFields component', () => {
       description: '',
       allowDownload: true,
       allowUpload: false,
+      uploadPassword: '',
       showMetadata: true,
       expiresAt: null,
+      uploadExpiresAt: null,
     });
     const user = userEvent.setup();
 

@@ -3,6 +3,8 @@
   import VideoRemoteViewer from '$lib/components/asset-viewer/VideoRemoteViewer.svelte';
   import { assetViewerFadeDuration } from '$lib/constants';
   import { assetViewerManager } from '$lib/managers/asset-viewer-manager.svelte';
+  import { editManager } from '$lib/managers/edit/edit-manager.svelte';
+  import { transformManager } from '$lib/managers/edit/transform-manager.svelte';
   import { castManager } from '$lib/managers/cast-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
@@ -89,6 +91,27 @@
     return getAssetPlaybackUrl({ id: assetId, cacheKey });
   });
   const aspectRatio = $derived(asset.width && asset.height ? `${asset.width} / ${asset.height}` : undefined);
+
+  const isEditingThisAsset = $derived(
+    assetViewerManager.isShowEditor && editManager.currentAsset?.id === assetId,
+  );
+
+  const editPreviewTransform = $derived.by(() => {
+    if (!isEditingThisAsset) {
+      return undefined;
+    }
+
+    const transforms: string[] = [];
+
+    if (transformManager.mirrorHorizontal) {
+      transforms.push('scaleX(-1)');
+    }
+    if (transformManager.mirrorVertical) {
+      transforms.push('scaleY(-1)');
+    }
+
+    return transforms.length > 0 ? transforms.join(' ') : undefined;
+  });
   let showVideo = $state(false);
   let hasFocused = $state(false);
   let activeSession: { assetId: string; id: string } | undefined;
@@ -372,8 +395,10 @@
         dir="ltr"
         lang={$lang}
         nohotkeys
-        class="dark h-full max-w-full"
+        class="dark h-full max-w-full transition-transform motion-reduce:transition-none"
+        class:rotated={isEditingThisAsset && transformManager.normalizedRotation % 180 > 0}
         style:aspect-ratio={aspectRatio}
+        style:rotate={isEditingThisAsset ? `${transformManager.imageRotation}deg` : undefined}
         defaultduration={asset.duration! / 1000}
       >
         {#if featureFlagsManager.value.realtimeTranscoding}
@@ -411,7 +436,8 @@
             disablePictureInPicture
             playsinline
             {...useSwipe(onSwipe)}
-            class="h-full object-contain"
+            class="h-full object-contain transition-transform motion-reduce:transition-none"
+            style:transform={editPreviewTransform}
             oncanplay={(e) => handleCanPlay(e.currentTarget)}
             onloadedmetadata={() => (hasLoadedMetadata = true)}
             onended={onVideoEnded}

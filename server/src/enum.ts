@@ -12,6 +12,7 @@ export enum ImmichCookie {
   AuthType = 'immich_auth_type',
   IsAuthenticated = 'immich_is_authenticated',
   SharedLinkToken = 'immich_shared_link_token',
+  SharedLinkUploadToken = 'immich_shared_link_upload_token',
   OAuthState = 'immich_oauth_state',
   OAuthCodeVerifier = 'immich_oauth_code_verifier',
 }
@@ -58,6 +59,10 @@ export enum AssetFileType {
   FullSize = 'fullsize',
   Preview = 'preview',
   Thumbnail = 'thumbnail',
+  /** Auto-enhanced preview (see IMMICH_AUTO_ENHANCE); optional companion to {@link Preview} */
+  PreviewEnhanced = 'preview_enhanced',
+  /** Auto-enhanced thumbnail; optional companion to {@link Thumbnail} */
+  ThumbnailEnhanced = 'thumbnail_enhanced',
   Sidecar = 'sidecar',
   EncodedVideo = 'encoded_video',
 }
@@ -378,6 +383,7 @@ export const UserMetadataKeySchema = z
 
 export enum AssetMetadataKey {
   MobileApp = 'mobile-app',
+  GuestContributor = 'guest-contributor',
 }
 
 export enum UserAvatarColor {

@@ -26,6 +26,12 @@ const AssetMediaOptionsSchema = z
         .getExtensions(),
     ),
     edited: stringToBool.default(false).optional().describe('Return edited asset if available'),
+    unenhanced: stringToBool
+      .default(false)
+      .optional()
+      .describe(
+        'When true, skip auto-enhanced preview/thumbnail (standard derivatives only). No effect if IMMICH_AUTO_ENHANCE is off.',
+      ),
   })
   .meta({ id: 'AssetMediaOptionsDto' });
 

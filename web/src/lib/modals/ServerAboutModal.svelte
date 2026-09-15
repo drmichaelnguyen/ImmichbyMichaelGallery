@@ -1,5 +1,6 @@
 <script lang="ts">
   import ServerAboutItem from '$lib/components/ServerAboutItem.svelte';
+  import { APP_NAME } from '$lib/constants/branding';
   import { locale } from '$lib/stores/preferences.store';
   import { type ServerAboutResponseDto, type ServerVersionHistoryResponseDto } from '@immich/sdk';
   import { Alert, Label, Modal, ModalBody } from '@immich/ui';
@@ -22,7 +23,7 @@
         <Alert color="warning" title={$t('main_branch_warning')} class="col-span-full" size="small" />
       {/if}
 
-      <ServerAboutItem id="immich" title="Immich" version={info.version} versionHref={info.versionUrl} />
+      <ServerAboutItem id="immich" title={APP_NAME} version={info.version} versionHref={info.versionUrl} />
       <ServerAboutItem id="exif" title="ExifTool" version={info.exiftool} />
       <ServerAboutItem id="nodejs" title="Node.js" version={info.nodejs} />
       <ServerAboutItem id="libvips" title="Libvips" version={info.libvips} />

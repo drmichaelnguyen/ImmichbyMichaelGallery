@@ -75,6 +75,7 @@
     onError?: () => void;
     ref?: HTMLDivElement;
     imgRef?: HTMLImageElement;
+    imageFilter?: string;
     backdrop?: Snippet;
     overlays?: Snippet;
   };
@@ -90,6 +91,7 @@
     onUrlChange,
     onImageReady,
     onError,
+    imageFilter,
     backdrop,
     overlays,
   }: Props = $props();
@@ -234,6 +236,7 @@
       style:height={rasterHeight}
       style:transform="scale({rasterScale})"
       style:transform-origin={languageManager.rtl ? 'right top' : 'left top'}
+      style:filter={imageFilter}
       style:will-change={maxRasterPixels > 0 ? 'transform' : undefined}
     >
       {#if show.alphaBackground}

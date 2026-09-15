@@ -76,9 +76,15 @@ export const removeTag = async ({
   return assetIds;
 };
 
-export const downloadArchive = async (fileName: string, options: Omit<DownloadInfoDto, 'archiveSize'>) => {
+type DownloadArchiveFormat = 'original' | 'jpg';
+
+export const downloadArchive = async (
+  fileName: string,
+  options: Omit<DownloadInfoDto, 'archiveSize'> & { edited?: boolean; downloadFormat?: DownloadArchiveFormat },
+) => {
   const archiveSize = authManager.authenticated ? authManager.preferences.download.archiveSize : undefined;
-  const dto = { ...options, archiveSize };
+  const { edited = true, downloadFormat = 'original', ...infoOptions } = options;
+  const dto = { ...infoOptions, archiveSize };
   const [error, downloadInfo] = await withError(() => getDownloadInfo({ ...authManager.params, downloadInfoDto: dto }));
   if (error) {
     const $t = get(t);
@@ -107,7 +113,7 @@ export const downloadArchive = async (fileName: string, options: Omit<DownloadIn
       if (downloadInfo.archives.length > 1) {
         downloadManager.add(downloadKey, url, archive.assetIds, archiveName, archive.size);
       } else {
-        downloadUrlPost(url, archive.assetIds, archiveName);
+        downloadUrlPost(url, archive.assetIds, archiveName, edited, downloadFormat);
         const $t = await getFormatter();
         const $locale = get(locale);
         toastManager.primary(

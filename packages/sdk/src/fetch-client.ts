@@ -1351,12 +1351,79 @@ export type RotateParameters = {
 export type MirrorParameters = {
     axis: MirrorAxis;
 };
+export type ColorAdjustParameters = {
+    brightness: number;
+    contrast: number;
+    saturation: number;
+    exposure: number;
+    warmth: number;
+    highlights?: number;
+    shadows?: number;
+    vibrance?: number;
+    tint?: number;
+    clarity?: number;
+    fade?: number;
+};
+export type BrushPoint = {
+    /** Normalized X (0-1) in post-geometry image space */
+    x: number;
+    /** Normalized Y (0-1) in post-geometry image space */
+    y: number;
+    /** Brush diameter as fraction of min(image width, height) */
+    size: number;
+    /** 0 = soft edge, 1 = hard edge */
+    hardness: number;
+    /** Stamp opacity */
+    opacity: number;
+};
+export type BrushStroke = {
+    points: BrushPoint[];
+    erase?: boolean;
+};
+export type BrushMaskShape = {
+    type: "brush";
+    strokes: BrushStroke[];
+    invert?: boolean;
+    mode?: "add" | "subtract";
+};
+export type RadialMaskShape = {
+    type: "radial";
+    cx: number;
+    cy: number;
+    radiusX: number;
+    radiusY: number;
+    feather?: number;
+    invert?: boolean;
+    mode?: "add" | "subtract";
+};
+export type LinearMaskShape = {
+    type: "linear";
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    feather?: number;
+    invert?: boolean;
+    mode?: "add" | "subtract";
+};
+export type LocalMaskShape = BrushMaskShape | RadialMaskShape | LinearMaskShape;
+export type LocalMask = {
+    id: string;
+    name?: string;
+    opacity?: number;
+    invert?: boolean;
+    adjustments: ColorAdjustParameters;
+    shapes: LocalMaskShape[];
+};
+export type LocalAdjustParameters = {
+    masks: LocalMask[];
+};
 export type AssetEditActionItemResponseDto = {
     action: AssetEditAction;
     /** Asset edit ID */
     id: string;
     /** List of edit actions to apply (crop, rotate, or mirror) */
-    parameters: CropParameters | RotateParameters | MirrorParameters;
+    parameters: CropParameters | RotateParameters | MirrorParameters | ColorAdjustParameters | LocalAdjustParameters;
 };
 export type AssetEditsResponseDto = {
     /** Asset ID these edits belong to */
@@ -1367,7 +1434,7 @@ export type AssetEditsResponseDto = {
 export type AssetEditActionItemDto = {
     action: AssetEditAction;
     /** List of edit actions to apply (crop, rotate, or mirror) */
-    parameters: CropParameters | RotateParameters | MirrorParameters;
+    parameters: CropParameters | RotateParameters | MirrorParameters | ColorAdjustParameters | LocalAdjustParameters;
 };
 export type AssetEditsCreateDto = {
     /** List of edit actions to apply (crop, rotate, or mirror) */
@@ -1629,6 +1696,8 @@ export type DownloadArchiveDto = {
     assetIds: string[];
     /** Download edited asset if available */
     edited?: boolean;
+    /** Archive format. "jpg" converts image assets to JPEG; non-images remain original. */
+    downloadFormat?: 'original' | 'jpg';
 };
 export type DownloadInfoDto = {
     /** Album ID to download */
@@ -2898,12 +2967,18 @@ export type SharedLinkResponseDto = {
     description: string | null;
     /** Expiration date */
     expiresAt: string | null;
+    /** Upload contribution window expiration */
+    uploadExpiresAt: string | null;
     /** Shared link ID */
     id: string;
     /** Encryption key (base64url) */
     key: string;
     /** Has password */
     password: string | null;
+    /** Upload password (owners only; null for public viewers) */
+    uploadPassword: string | null;
+    /** Whether contributing requires an upload password */
+    hasUploadPassword: boolean;
     /** Show metadata */
     showMetadata: boolean;
     /** Custom URL slug */
@@ -2925,8 +3000,12 @@ export type SharedLinkCreateDto = {
     description?: string | null;
     /** Expiration date */
     expiresAt?: string | null;
+    /** Upload contribution window expiration */
+    uploadExpiresAt?: string | null;
     /** Link password */
     password?: string | null;
+    /** Password required to upload contributions */
+    uploadPassword?: string | null;
     /** Show metadata */
     showMetadata?: boolean;
     /** Custom URL slug */
@@ -2946,8 +3025,12 @@ export type SharedLinkEditDto = {
     description?: string | null;
     /** Expiration date */
     expiresAt?: string | null;
+    /** Upload contribution window expiration */
+    uploadExpiresAt?: string | null;
     /** Link password */
     password?: string | null;
+    /** Password required to upload contributions */
+    uploadPassword?: string | null;
     /** Show metadata */
     showMetadata?: boolean;
     /** Custom URL slug */
@@ -4768,13 +4851,18 @@ export function removeAssetEdits({ id }: {
 /**
  * Retrieve edits for an existing asset
  */
-export function getAssetEdits({ id }: {
+export function getAssetEdits({ id, key, slug }: {
     id: string;
+    key?: string;
+    slug?: string;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchJson<{
         status: 200;
         data: AssetEditsResponseDto;
-    }>(`/assets/${encodeURIComponent(id)}/edits`, {
+    }>(`/assets/${encodeURIComponent(id)}/edits${QS.query(QS.explode({
+        key,
+        slug
+    }))}`, {
         ...opts
     }));
 }
@@ -4791,6 +4879,27 @@ export function editAsset({ id, assetEditsCreateDto }: {
     }>(`/assets/${encodeURIComponent(id)}/edits`, oazapfts.json({
         ...opts,
         method: "PUT",
+        body: assetEditsCreateDto
+    })));
+}
+export function renderAssetEdits({ id, key, slug, assetEditsCreateDto }: {
+    id: string;
+    key?: string;
+    slug?: string;
+    assetEditsCreateDto: AssetEditsCreateDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchBlob<{
+        status: 200;
+        data: Blob;
+    } | {
+        status: 201;
+        data: Blob;
+    }>(`/assets/${encodeURIComponent(id)}/edits/render${QS.query(QS.explode({
+        key,
+        slug
+    }))}`, oazapfts.json({
+        ...opts,
+        method: "POST",
         body: assetEditsCreateDto
     })));
 }
@@ -4885,12 +4994,13 @@ export function downloadAsset({ edited, id, key, slug }: {
 /**
  * View asset thumbnail
  */
-export function viewAsset({ edited, id, key, size, slug }: {
+export function viewAsset({ edited, id, key, size, slug, unenhanced }: {
     edited?: boolean;
     id: string;
     key?: string;
     size?: AssetMediaSize;
     slug?: string;
+    unenhanced?: boolean;
 }, opts?: Oazapfts.RequestOpts) {
     return oazapfts.ok(oazapfts.fetchBlob<{
         status: 200;
@@ -4899,7 +5009,8 @@ export function viewAsset({ edited, id, key, size, slug }: {
         edited,
         key,
         size,
-        slug
+        slug,
+        unenhanced
     }))}`, {
         ...opts
     }));
@@ -6831,6 +6942,26 @@ export function sharedLinkLogin({ key, slug, sharedLinkLoginDto }: {
     })));
 }
 /**
+ * Shared link upload login
+ */
+export function sharedLinkUploadLogin({ key, slug, sharedLinkLoginDto }: {
+    key?: string;
+    slug?: string;
+    sharedLinkLoginDto: SharedLinkLoginDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: SharedLinkResponseDto;
+    }>(`/shared-links/upload-login${QS.query(QS.explode({
+        key,
+        slug
+    }))}`, oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: sharedLinkLoginDto
+    })));
+}
+/**
  * Retrieve current shared link
  */
 export function getMySharedLink({ key, slug }: {
@@ -7284,9 +7415,11 @@ export function tagAssets({ id, bulkIdsDto }: {
 /**
  * Get time bucket
  */
-export function getTimeBucket({ albumId, bbox, isFavorite, isTrashed, key, order, orderBy, personId, slug, tagId, timeBucket, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimeBucket({ albumId, bbox, city, country, isFavorite, isTrashed, key, order, orderBy, personId, slug, tagId, takenAfter, takenBefore, timeBucket, userId, visibility, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
     bbox?: string;
+    city?: string;
+    country?: string;
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
@@ -7295,6 +7428,8 @@ export function getTimeBucket({ albumId, bbox, isFavorite, isTrashed, key, order
     personId?: string;
     slug?: string;
     tagId?: string;
+    takenAfter?: string;
+    takenBefore?: string;
     timeBucket: string;
     userId?: string;
     visibility?: AssetVisibility;
@@ -7308,6 +7443,8 @@ export function getTimeBucket({ albumId, bbox, isFavorite, isTrashed, key, order
     }>(`/timeline/bucket${QS.query(QS.explode({
         albumId,
         bbox,
+        city,
+        country,
         isFavorite,
         isTrashed,
         key,
@@ -7316,6 +7453,8 @@ export function getTimeBucket({ albumId, bbox, isFavorite, isTrashed, key, order
         personId,
         slug,
         tagId,
+        takenAfter,
+        takenBefore,
         timeBucket,
         userId,
         visibility,
@@ -7329,9 +7468,11 @@ export function getTimeBucket({ albumId, bbox, isFavorite, isTrashed, key, order
 /**
  * Get time buckets
  */
-export function getTimeBuckets({ albumId, bbox, isFavorite, isTrashed, key, order, orderBy, personId, slug, tagId, userId, visibility, withCoordinates, withPartners, withStacked }: {
+export function getTimeBuckets({ albumId, bbox, city, country, isFavorite, isTrashed, key, order, orderBy, personId, slug, tagId, takenAfter, takenBefore, userId, visibility, withCoordinates, withPartners, withStacked }: {
     albumId?: string;
     bbox?: string;
+    city?: string;
+    country?: string;
     isFavorite?: boolean;
     isTrashed?: boolean;
     key?: string;
@@ -7340,6 +7481,8 @@ export function getTimeBuckets({ albumId, bbox, isFavorite, isTrashed, key, orde
     personId?: string;
     slug?: string;
     tagId?: string;
+    takenAfter?: string;
+    takenBefore?: string;
     userId?: string;
     visibility?: AssetVisibility;
     withCoordinates?: boolean;
@@ -7352,6 +7495,8 @@ export function getTimeBuckets({ albumId, bbox, isFavorite, isTrashed, key, orde
     }>(`/timeline/buckets${QS.query(QS.explode({
         albumId,
         bbox,
+        city,
+        country,
         isFavorite,
         isTrashed,
         key,
@@ -7360,6 +7505,8 @@ export function getTimeBuckets({ albumId, bbox, isFavorite, isTrashed, key, orde
         personId,
         slug,
         tagId,
+        takenAfter,
+        takenBefore,
         userId,
         visibility,
         withCoordinates,
@@ -8123,7 +8270,9 @@ export enum AssetTypeEnum {
 export enum AssetEditAction {
     Crop = "crop",
     Rotate = "rotate",
-    Mirror = "mirror"
+    Mirror = "mirror",
+    ColorAdjust = "colorAdjust",
+    LocalAdjust = "localAdjust"
 }
 export enum MirrorAxis {
     Horizontal = "horizontal",

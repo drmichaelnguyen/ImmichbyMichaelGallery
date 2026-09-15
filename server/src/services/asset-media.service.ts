@@ -229,10 +229,6 @@ export class AssetMediaService extends BaseService {
   async downloadOriginal(auth: AuthDto, id: string, dto: AssetDownloadOriginalDto): Promise<ImmichFileResponse> {
     await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
 
-    if (auth.sharedLink) {
-      dto.edited = true;
-    }
-
     const { originalPath, originalFileName, editedPath } = await this.assetRepository.getForOriginal(
       id,
       dto.edited ?? false,
@@ -263,14 +259,28 @@ export class AssetMediaService extends BaseService {
       dto.edited = true;
     }
 
-    const size = (dto.size ?? AssetMediaSize.THUMBNAIL) as unknown as AssetFileType;
-    const { originalPath, originalFileName, path } = await this.assetRepository.getForThumbnail(
+    const mediaSize = dto.size ?? AssetMediaSize.THUMBNAIL;
+    let fileType = this.resolveAssetFileTypeForThumbnail(mediaSize, dto);
+    let { originalPath, originalFileName, path } = await this.assetRepository.getForThumbnail(
       id,
-      size,
+      fileType,
       dto.edited ?? false,
     );
 
-    if (size === AssetFileType.FullSize && mimeTypes.isWebSupportedImage(originalPath) && !dto.edited) {
+    if (
+      !path &&
+      (fileType === AssetFileType.ThumbnailEnhanced || fileType === AssetFileType.PreviewEnhanced)
+    ) {
+      fileType =
+        fileType === AssetFileType.ThumbnailEnhanced ? AssetFileType.Thumbnail : AssetFileType.Preview;
+      ({ originalPath, originalFileName, path } = await this.assetRepository.getForThumbnail(
+        id,
+        fileType,
+        dto.edited ?? false,
+      ));
+    }
+
+    if (fileType === AssetFileType.FullSize && mimeTypes.isWebSupportedImage(originalPath) && !dto.edited) {
       // use original file for web supported images
       return { targetSize: 'original' };
     }
@@ -287,7 +297,7 @@ export class AssetMediaService extends BaseService {
 
     const fileNameBase =
       auth.sharedLink && !auth.sharedLink.showExif ? id : getFileNameWithoutExtension(originalFileName);
-    const fileName = `${fileNameBase}_${size}${getFilenameExtension(path)}`;
+    const fileName = `${fileNameBase}_${mediaSize}${getFilenameExtension(path)}`;
 
     return new ImmichFileResponse({
       fileName,
@@ -306,7 +316,7 @@ export class AssetMediaService extends BaseService {
       throw new NotFoundException('Asset not found or asset is not a video');
     }
 
-    const filepath = asset.encodedVideoPath || asset.originalPath;
+    const filepath = asset.editedEncodedVideoPath || asset.encodedVideoPath || asset.originalPath;
 
     return new ImmichFileResponse({
       path: filepath,
@@ -363,6 +373,23 @@ export class AssetMediaService extends BaseService {
       userIds,
       recipientIds: userIds,
     });
+  }
+
+  private resolveAssetFileTypeForThumbnail(mediaSize: AssetMediaSize, dto: AssetMediaOptionsDto): AssetFileType {
+    if (mediaSize === AssetMediaSize.FULLSIZE) {
+      return AssetFileType.FullSize;
+    }
+
+    if (dto.edited) {
+      return mediaSize === AssetMediaSize.THUMBNAIL ? AssetFileType.Thumbnail : AssetFileType.Preview;
+    }
+
+    const unenhanced = dto.unenhanced ?? false;
+    if (mediaSize === AssetMediaSize.THUMBNAIL) {
+      return unenhanced ? AssetFileType.Thumbnail : AssetFileType.ThumbnailEnhanced;
+    }
+
+    return unenhanced ? AssetFileType.Preview : AssetFileType.PreviewEnhanced;
   }
 
   private requireQuota(auth: AuthDto, size: number) {

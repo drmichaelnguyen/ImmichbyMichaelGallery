@@ -1,5 +1,6 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Next, Param, Patch, Post, Put, Query, Res } from '@nestjs/common';
 import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
+import { NextFunction, Response } from 'express';
 import { Endpoint, HistoryBuilder } from 'src/decorators';
 import { AssetResponseDto } from 'src/dtos/asset-response.dto';
 import {
@@ -21,14 +22,21 @@ import { AuthDto } from 'src/dtos/auth.dto';
 import { AssetEditsCreateDto, AssetEditsResponseDto } from 'src/dtos/editing.dto';
 import { AssetOcrResponseDto } from 'src/dtos/ocr.dto';
 import { ApiTag, Permission, RouteKey } from 'src/enum';
-import { Auth, Authenticated } from 'src/middleware/auth.guard';
+import { Auth, Authenticated, FileResponse } from 'src/middleware/auth.guard';
+import { LoggingRepository } from 'src/repositories/logging.repository';
 import { AssetService } from 'src/services/asset.service';
+import { sendFile } from 'src/utils/file';
 import { UUIDParamDto } from 'src/validation';
 
 @ApiTags(ApiTag.Assets)
 @Controller(RouteKey.Asset)
 export class AssetController {
-  constructor(private service: AssetService) {}
+  constructor(
+    private service: AssetService,
+    private logger: LoggingRepository,
+  ) {
+    this.logger.setContext(AssetController.name);
+  }
 
   @Get('statistics')
   @Authenticated({ permission: Permission.AssetStatistics })
@@ -232,7 +240,7 @@ export class AssetController {
   }
 
   @Get(':id/edits')
-  @Authenticated({ permission: Permission.AssetEditGet })
+  @Authenticated({ permission: Permission.AssetRead, sharedLink: true })
   @Endpoint({
     summary: 'Retrieve edits for an existing asset',
     description: 'Retrieve a series of edit actions (crop, rotate, mirror) associated with the specified asset.',
@@ -240,6 +248,25 @@ export class AssetController {
   })
   getAssetEdits(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<AssetEditsResponseDto> {
     return this.service.getAssetEdits(auth, id);
+  }
+
+  @Post(':id/edits/render')
+  @HttpCode(HttpStatus.OK)
+  @FileResponse()
+  @Authenticated({ permission: Permission.AssetDownload, sharedLink: true })
+  @Endpoint({
+    summary: 'Render asset edits without saving',
+    description: 'Renders the specified edit actions to a JPEG for download without modifying the asset.',
+    history: new HistoryBuilder().added('v3.0.0').beta('v3.0.0'),
+  })
+  async renderAssetEdits(
+    @Auth() auth: AuthDto,
+    @Param() { id }: UUIDParamDto,
+    @Body() dto: AssetEditsCreateDto,
+    @Res() res: Response,
+    @Next() next: NextFunction,
+  ) {
+    await sendFile(res, next, () => this.service.renderAssetEdits(auth, id, dto), this.logger);
   }
 
   @Put(':id/edits')
