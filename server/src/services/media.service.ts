@@ -4,7 +4,7 @@ import { FACE_THUMBNAIL_SIZE, JOBS_ASSET_PAGINATION_SIZE } from 'src/constants';
 import { ImagePathOptions, StorageCore, ThumbnailPathEntity } from 'src/cores/storage.core';
 import { AssetFile } from 'src/database';
 import { OnEvent, OnJob } from 'src/decorators';
-import { AssetEditAction, CropParameters } from 'src/dtos/editing.dto';
+import { AssetEditAction, AssetEditActionItem, CropParameters } from 'src/dtos/editing.dto';
 import { SystemConfigFFmpegDto } from 'src/dtos/system-config.dto';
 import {
   AssetFileType,
@@ -294,7 +294,11 @@ export class MediaService extends BaseService {
       ((image.fullsize.enabled || asset.exifInfo.projectionType === 'EQUIRECTANGULAR') &&
         !mimeTypes.isWebSupportedImage(asset.originalPath)) ||
       useEdits;
-    const convertFullsize = generateFullsize && (!extracted || !mimeTypes.isWebSupportedImage(` .${extracted.format}`));
+    // Always re-encode an edited fullsize. For RAW + embedded JPEG, the stock Immich path
+    // would otherwise copy the unedited preview as fullsize (`isEdited: false`).
+    const convertFullsize =
+      useEdits ||
+      (generateFullsize && (!extracted || !mimeTypes.isWebSupportedImage(`.${extracted.format}`)));
 
     const thumbSource = extracted ? extracted.buffer : asset.originalPath;
     const { data, info, colorspace } = await this.decodeImage(
@@ -326,6 +330,18 @@ export class MediaService extends BaseService {
     const extractedImage = await this.extractOriginalImage(asset, image, useEdits);
     const { info, data, colorspace, generateFullsize, convertFullsize, extracted, isTransparent } = extractedImage;
 
+    // Crop coords from the editor are in EXIF/original space. RAW embedded JPEGs are smaller,
+    // so scale crop rectangles onto the decoded source before sharp.extract().
+    const imageEdits =
+      useEdits && asset.edits.length > 0
+        ? this.scaleEditsToDecodedSource(asset.edits, getDimensions(asset.exifInfo!), {
+            width: info.width,
+            height: info.height,
+          })
+        : useEdits
+          ? asset.edits
+          : [];
+
     const previewFormat = image.preview.format;
     this.warnOnTransparencyLoss(isTransparent, previewFormat, asset.id);
 
@@ -349,7 +365,7 @@ export class MediaService extends BaseService {
     this.storageCore.ensureFolders(previewFile.path);
 
     // generate final images
-    const baseOptions = { colorspace, processInvalidImages: false, raw: info, edits: useEdits ? asset.edits : [] };
+    const baseOptions = { colorspace, processInvalidImages: false, raw: info, edits: imageEdits };
     const thumbnailOptions = { ...image.thumbnail, ...baseOptions, format: thumbnailFormat };
     const previewOptions = { ...image.preview, ...baseOptions, format: previewFormat };
     const promises = [
@@ -411,7 +427,7 @@ export class MediaService extends BaseService {
     }
 
     const decodedDimensions = { width: info.width, height: info.height };
-    const fullsizeDimensions = useEdits ? getOutputDimensions(asset.edits, decodedDimensions) : decodedDimensions;
+    const fullsizeDimensions = useEdits ? getOutputDimensions(imageEdits, decodedDimensions) : decodedDimensions;
 
     const baseFiles = fullsizeFile ? [previewFile, thumbnailFile, fullsizeFile] : [previewFile, thumbnailFile];
     let files = baseFiles;
@@ -997,6 +1013,46 @@ export class MediaService extends BaseService {
       thumbhash,
       fullsizeDimensions,
     };
+  }
+
+  /**
+   * Editor crop rectangles are authored against EXIF/original pixel dimensions.
+   * When Immich decodes a smaller RAW embedded JPEG (or any resized source), scale
+   * crop boxes into that source space so sharp.extract() does not throw extract_area.
+   */
+  private scaleEditsToDecodedSource(
+    edits: AssetEditActionItem[],
+    exifDimensions: ImageDimensions,
+    sourceDimensions: ImageDimensions,
+  ): AssetEditActionItem[] {
+    if (
+      !exifDimensions.width ||
+      !exifDimensions.height ||
+      !sourceDimensions.width ||
+      !sourceDimensions.height ||
+      (exifDimensions.width === sourceDimensions.width && exifDimensions.height === sourceDimensions.height)
+    ) {
+      return edits;
+    }
+
+    const scaleX = sourceDimensions.width / exifDimensions.width;
+    const scaleY = sourceDimensions.height / exifDimensions.height;
+
+    return edits.map((edit) => {
+      if (edit.action !== AssetEditAction.Crop) {
+        return edit;
+      }
+
+      const left = Math.max(0, Math.min(Math.round(edit.parameters.x * scaleX), sourceDimensions.width - 1));
+      const top = Math.max(0, Math.min(Math.round(edit.parameters.y * scaleY), sourceDimensions.height - 1));
+      const width = Math.max(1, Math.min(Math.round(edit.parameters.width * scaleX), sourceDimensions.width - left));
+      const height = Math.max(1, Math.min(Math.round(edit.parameters.height * scaleY), sourceDimensions.height - top));
+
+      return {
+        ...edit,
+        parameters: { x: left, y: top, width, height } satisfies CropParameters,
+      };
+    });
   }
 
   private warnOnTransparencyLoss(isTransparent: boolean, format: ImageFormat, assetId: string) {

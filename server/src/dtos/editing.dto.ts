@@ -6,6 +6,7 @@ export enum AssetEditAction {
   Rotate = 'rotate',
   Mirror = 'mirror',
   ColorAdjust = 'colorAdjust',
+  LocalAdjust = 'localAdjust',
 }
 
 export const AssetEditActionSchema = z
@@ -70,25 +71,115 @@ const ColorAdjustParametersSchema = z
 
 export type ColorAdjustParameters = z.infer<typeof ColorAdjustParametersSchema>;
 
+const BrushPointSchema = z
+  .object({
+    x: z.number().min(0).max(1).describe('Normalized X (0-1) in post-geometry image space'),
+    y: z.number().min(0).max(1).describe('Normalized Y (0-1) in post-geometry image space'),
+    size: z.number().min(0.001).max(1).describe('Brush diameter as fraction of min(image width, height)'),
+    hardness: z.number().min(0).max(1).describe('0 = soft edge, 1 = hard edge'),
+    opacity: z.number().min(0).max(1).describe('Stamp opacity'),
+  })
+  .meta({ id: 'BrushPoint' });
+
+const BrushStrokeSchema = z
+  .object({
+    points: z.array(BrushPointSchema).min(1).max(5000),
+    erase: z.boolean().default(false),
+  })
+  .meta({ id: 'BrushStroke' });
+
+const MaskCombineModeSchema = z.enum(['add', 'subtract']).default('add');
+
+const BrushShapeSchema = z
+  .object({
+    type: z.literal('brush'),
+    strokes: z.array(BrushStrokeSchema).min(1).max(200),
+    invert: z.boolean().default(false),
+    mode: MaskCombineModeSchema,
+  })
+  .meta({ id: 'BrushMaskShape' });
+
+const RadialShapeSchema = z
+  .object({
+    type: z.literal('radial'),
+    cx: z.number().min(0).max(1),
+    cy: z.number().min(0).max(1),
+    radiusX: z.number().min(0.001).max(2),
+    radiusY: z.number().min(0.001).max(2),
+    feather: z.number().min(0).max(1).default(0.4),
+    invert: z.boolean().default(false),
+    mode: MaskCombineModeSchema,
+  })
+  .meta({ id: 'RadialMaskShape' });
+
+const LinearShapeSchema = z
+  .object({
+    type: z.literal('linear'),
+    x1: z.number().min(0).max(1),
+    y1: z.number().min(0).max(1),
+    x2: z.number().min(0).max(1),
+    y2: z.number().min(0).max(1),
+    feather: z.number().min(0).max(1).default(0.35),
+    invert: z.boolean().default(false),
+    mode: MaskCombineModeSchema,
+  })
+  .meta({ id: 'LinearMaskShape' });
+
+const LocalMaskShapeSchema = z
+  .discriminatedUnion('type', [BrushShapeSchema, RadialShapeSchema, LinearShapeSchema])
+  .meta({ id: 'LocalMaskShape' });
+
+const LocalMaskSchema = z
+  .object({
+    id: z.string().min(1).max(64),
+    name: z.string().max(80).optional(),
+    opacity: z.number().min(0).max(1).default(1),
+    invert: z.boolean().default(false),
+    adjustments: ColorAdjustParametersSchema,
+    shapes: z.array(LocalMaskShapeSchema).min(1).max(50),
+  })
+  .meta({ id: 'LocalMask' });
+
+const LocalAdjustParametersSchema = z
+  .object({
+    masks: z.array(LocalMaskSchema).min(1).max(20),
+  })
+  .meta({ id: 'LocalAdjustParameters' });
+
+export type LocalMaskShape = z.infer<typeof LocalMaskShapeSchema>;
+export type LocalMask = z.infer<typeof LocalMaskSchema>;
+export type LocalAdjustParameters = z.infer<typeof LocalAdjustParametersSchema>;
+
 // TODO: ideally we would use the discriminated union directly in the future not only for type support but also for validation and openapi generation
 const __AssetEditActionItemSchema = z.discriminatedUnion('action', [
   z.object({ action: AssetEditActionSchema.extract(['Crop']), parameters: CropParametersSchema }),
   z.object({ action: AssetEditActionSchema.extract(['Rotate']), parameters: RotateParametersSchema }),
   z.object({ action: AssetEditActionSchema.extract(['Mirror']), parameters: MirrorParametersSchema }),
   z.object({ action: AssetEditActionSchema.extract(['ColorAdjust']), parameters: ColorAdjustParametersSchema }),
+  z.object({ action: AssetEditActionSchema.extract(['LocalAdjust']), parameters: LocalAdjustParametersSchema }),
 ]);
 
 const AssetEditParametersSchema = z
-  .union([CropParametersSchema, RotateParametersSchema, MirrorParametersSchema, ColorAdjustParametersSchema], {
-    error: getExpectedKeysByActionMessage,
-  })
-  .describe('List of edit actions to apply (crop, rotate, mirror, or colorAdjust)');
+  .union(
+    [
+      CropParametersSchema,
+      RotateParametersSchema,
+      MirrorParametersSchema,
+      ColorAdjustParametersSchema,
+      LocalAdjustParametersSchema,
+    ],
+    {
+      error: getExpectedKeysByActionMessage,
+    },
+  )
+  .describe('List of edit actions to apply (crop, rotate, mirror, colorAdjust, or localAdjust)');
 
 const actionParameterMap = {
   [AssetEditAction.Crop]: CropParametersSchema,
   [AssetEditAction.Rotate]: RotateParametersSchema,
   [AssetEditAction.Mirror]: MirrorParametersSchema,
   [AssetEditAction.ColorAdjust]: ColorAdjustParametersSchema,
+  [AssetEditAction.LocalAdjust]: LocalAdjustParametersSchema,
 } as const;
 
 function getExpectedKeysByActionMessage(): string {

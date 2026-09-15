@@ -39,6 +39,7 @@ import {
 } from 'src/types';
 import { handlePromiseError } from 'src/utils/misc';
 import { applyColorAdjust } from 'src/utils/color-adjust';
+import { applyLocalAdjustToBuffer } from 'src/utils/local-adjust';
 import { createAffineMatrix } from 'src/utils/transform';
 
 const probe = (input: string, options: string[]): Promise<FfprobeData> =>
@@ -151,18 +152,31 @@ export class MediaRepository {
   }
 
   decodeImage(input: string | Buffer, options: DecodeToBufferOptions) {
-    return this.getImageDecodingPipeline(input, options).raw().toBuffer({ resolveWithObject: true });
+    return this.getImageDecodingPipeline(input, options).then((pipeline) =>
+      pipeline.raw().toBuffer({ resolveWithObject: true }),
+    );
   }
 
-  private applyEdits(pipeline: sharp.Sharp, edits: AssetEditActionItem[]): sharp.Sharp {
+  private applyEdits(
+    pipeline: sharp.Sharp,
+    edits: AssetEditActionItem[],
+    bounds?: { width: number; height: number },
+  ): sharp.Sharp {
     const crop = edits.find((edit) => edit.action === AssetEditAction.Crop);
     if (crop) {
-      pipeline = pipeline.extract({
-        left: Math.round(crop.parameters.x),
-        top: Math.round(crop.parameters.y),
-        width: Math.round(crop.parameters.width),
-        height: Math.round(crop.parameters.height),
-      });
+      let left = Math.round(crop.parameters.x);
+      let top = Math.round(crop.parameters.y);
+      let width = Math.round(crop.parameters.width);
+      let height = Math.round(crop.parameters.height);
+
+      if (bounds && bounds.width > 0 && bounds.height > 0) {
+        left = Math.max(0, Math.min(left, bounds.width - 1));
+        top = Math.max(0, Math.min(top, bounds.height - 1));
+        width = Math.max(1, Math.min(width, bounds.width - left));
+        height = Math.max(1, Math.min(height, bounds.height - top));
+      }
+
+      pipeline = pipeline.extract({ left, top, width, height });
     }
 
     const affineEditOperations = edits.filter(
@@ -184,8 +198,26 @@ export class MediaRepository {
     return pipeline;
   }
 
+  private async applyLocalAdjustIfNeeded(pipeline: sharp.Sharp, edits: AssetEditActionItem[]): Promise<sharp.Sharp> {
+    const localAdjust = edits.find((edit) => edit.action === AssetEditAction.LocalAdjust);
+    if (!localAdjust || localAdjust.action !== AssetEditAction.LocalAdjust) {
+      return pipeline;
+    }
+
+    const { data, info } = await pipeline.ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+    const blended = await applyLocalAdjustToBuffer(data, info, localAdjust.parameters);
+    return sharp(blended, {
+      raw: {
+        width: info.width,
+        height: info.height,
+        channels: info.channels as 1 | 2 | 3 | 4,
+      },
+    });
+  }
+
   async generateThumbnail(input: string | Buffer, options: GenerateThumbnailOptions, output: string): Promise<void> {
-    await this.getImageDecodingPipeline(input, options)
+    const pipeline = await this.getImageDecodingPipeline(input, options);
+    await pipeline
       .toFormat(options.format, {
         quality: options.quality,
         // this is default in libvips (except the threshold is 90), but we need to set it manually in sharp
@@ -200,10 +232,19 @@ export class MediaRepository {
     output: string,
     options: DecodeToBufferOptions & { edits: AssetEditActionItem[] },
   ): Promise<void> {
-    await this.getImageDecodingPipeline(input, options).jpeg({ quality: 92, mozjpeg: true }).toFile(output);
+    const pipeline = await this.getImageDecodingPipeline(input, options);
+    await pipeline.jpeg({ quality: 92, mozjpeg: true }).toFile(output);
   }
 
-  private getImageDecodingPipeline(input: string | Buffer, options: DecodeToBufferOptions) {
+  async renderImageBufferWithEdits(
+    input: string,
+    options: DecodeToBufferOptions & { edits: AssetEditActionItem[] },
+  ): Promise<Buffer> {
+    const pipeline = await this.getImageDecodingPipeline(input, options);
+    return pipeline.jpeg({ quality: 92, mozjpeg: true }).toBuffer();
+  }
+
+  private async getImageDecodingPipeline(input: string | Buffer, options: DecodeToBufferOptions) {
     let pipeline = sharp(input, {
       // some invalid images can still be processed by sharp, but we want to fail on them by default to avoid crashes
       failOn: options.processInvalidImages ? 'none' : 'error',
@@ -227,7 +268,12 @@ export class MediaRepository {
     }
 
     if (options.edits && options.edits.length > 0) {
-      pipeline = this.applyEdits(pipeline, options.edits);
+      pipeline = this.applyEdits(
+        pipeline,
+        options.edits,
+        options.raw ? { width: options.raw.width, height: options.raw.height } : undefined,
+      );
+      pipeline = await this.applyLocalAdjustIfNeeded(pipeline, options.edits);
     }
 
     if (options.size !== undefined) {
@@ -239,12 +285,13 @@ export class MediaRepository {
   async generateThumbhash(input: string | Buffer, options: GenerateThumbhashOptions): Promise<Buffer> {
     const { rgbaToThumbHash } = await import('thumbhash');
 
-    const { data, info } = await this.getImageDecodingPipeline(input, {
+    const pipeline = await this.getImageDecodingPipeline(input, {
       colorspace: options.colorspace,
       processInvalidImages: options.processInvalidImages,
       raw: options.raw,
       edits: options.edits,
-    })
+    });
+    const { data, info } = await pipeline
       .resize(100, 100, { fit: 'inside', withoutEnlargement: true })
       .raw()
       .ensureAlpha()

@@ -27,6 +27,10 @@ const DownloadResponseSchema = z
 
 const DownloadArchiveSchema = AssetIdsSchema.extend({
   edited: z.boolean().optional().describe('Download edited asset if available'),
+  downloadFormat: z
+    .enum(['original', 'jpg'])
+    .optional()
+    .describe('Archive format. "jpg" converts image assets to JPEG; non-images remain original.'),
 }).meta({ id: 'DownloadArchiveDto' });
 
 export class DownloadInfoDto extends createZodDto(DownloadInfoSchema) {}

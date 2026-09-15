@@ -968,12 +968,66 @@ export type ColorAdjustParameters = {
     clarity?: number;
     fade?: number;
 };
+export type BrushPoint = {
+    /** Normalized X (0-1) in post-geometry image space */
+    x: number;
+    /** Normalized Y (0-1) in post-geometry image space */
+    y: number;
+    /** Brush diameter as fraction of min(image width, height) */
+    size: number;
+    /** 0 = soft edge, 1 = hard edge */
+    hardness: number;
+    /** Stamp opacity */
+    opacity: number;
+};
+export type BrushStroke = {
+    points: BrushPoint[];
+    erase?: boolean;
+};
+export type BrushMaskShape = {
+    type: "brush";
+    strokes: BrushStroke[];
+    invert?: boolean;
+    mode?: "add" | "subtract";
+};
+export type RadialMaskShape = {
+    type: "radial";
+    cx: number;
+    cy: number;
+    radiusX: number;
+    radiusY: number;
+    feather?: number;
+    invert?: boolean;
+    mode?: "add" | "subtract";
+};
+export type LinearMaskShape = {
+    type: "linear";
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+    feather?: number;
+    invert?: boolean;
+    mode?: "add" | "subtract";
+};
+export type LocalMaskShape = BrushMaskShape | RadialMaskShape | LinearMaskShape;
+export type LocalMask = {
+    id: string;
+    name?: string;
+    opacity?: number;
+    invert?: boolean;
+    adjustments: ColorAdjustParameters;
+    shapes: LocalMaskShape[];
+};
+export type LocalAdjustParameters = {
+    masks: LocalMask[];
+};
 export type AssetEditActionItemResponseDto = {
     action: AssetEditAction;
     /** Asset edit ID */
     id: string;
     /** List of edit actions to apply (crop, rotate, or mirror) */
-    parameters: CropParameters | RotateParameters | MirrorParameters | ColorAdjustParameters;
+    parameters: CropParameters | RotateParameters | MirrorParameters | ColorAdjustParameters | LocalAdjustParameters;
 };
 export type AssetEditsResponseDto = {
     /** Asset ID these edits belong to */
@@ -984,7 +1038,7 @@ export type AssetEditsResponseDto = {
 export type AssetEditActionItemDto = {
     action: AssetEditAction;
     /** List of edit actions to apply (crop, rotate, or mirror) */
-    parameters: CropParameters | RotateParameters | MirrorParameters | ColorAdjustParameters;
+    parameters: CropParameters | RotateParameters | MirrorParameters | ColorAdjustParameters | LocalAdjustParameters;
 };
 export type AssetEditsCreateDto = {
     /** List of edit actions to apply (crop, rotate, or mirror) */
@@ -7417,7 +7471,8 @@ export enum AssetEditAction {
     Crop = "crop",
     Rotate = "rotate",
     Mirror = "mirror",
-    ColorAdjust = "colorAdjust"
+    ColorAdjust = "colorAdjust",
+    LocalAdjust = "localAdjust"
 }
 export enum MirrorAxis {
     Horizontal = "horizontal",

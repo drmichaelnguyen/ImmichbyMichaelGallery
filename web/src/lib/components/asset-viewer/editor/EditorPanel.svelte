@@ -92,7 +92,11 @@
         color={editManager.selectedTool?.type === tool.type ? 'primary' : 'secondary'}
         onclick={() => editManager.selectTool(tool.type)}
       >
-        {tool.type === EditToolType.Transform ? $t('editor_tab_transform') : $t('editor_tab_adjust')}
+        {tool.type === EditToolType.Transform
+          ? $t('editor_tab_transform')
+          : tool.type === EditToolType.Color
+            ? $t('editor_tab_adjust')
+            : $t('editor_tab_local')}
       </Button>
     {/each}
   </HStack>

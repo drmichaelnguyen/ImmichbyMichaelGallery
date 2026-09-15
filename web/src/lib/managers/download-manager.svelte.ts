@@ -3,6 +3,7 @@ export interface DownloadProgress {
   total: number;
   percentage: number;
   abort: AbortController | null;
+  unit?: 'bytes' | 'items';
 }
 
 class DownloadManager {
@@ -22,11 +23,11 @@ class DownloadManager {
 
     const item = this.assets[key];
     Object.assign(item, value);
-    item.percentage = Math.min(Math.floor((item.progress / item.total) * 100), 100);
+    item.percentage = item.total > 0 ? Math.min(Math.floor((item.progress / item.total) * 100), 100) : 0;
   }
 
-  add(key: string, total: number, abort?: AbortController) {
-    this.#update(key, { total, abort });
+  add(key: string, total: number, abort?: AbortController, unit: DownloadProgress['unit'] = 'bytes') {
+    this.#update(key, { total, abort, unit });
   }
 
   clear(key: string) {

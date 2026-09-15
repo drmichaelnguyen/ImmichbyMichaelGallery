@@ -28,11 +28,9 @@ import SharedLinkCreateModal from '$lib/modals/SharedLinkCreateModal.svelte';
 import { Route } from '$lib/route';
 import { createAlbumAndRedirect } from '$lib/utils/album-utils';
 import { downloadArchive } from '$lib/utils/asset-utils';
-import { isMobileDownloadClient } from '$lib/utils';
 import { openFileUploadDialog } from '$lib/utils/file-uploader';
 import { handleError } from '$lib/utils/handle-error';
 import { getFormatter } from '$lib/utils/i18n';
-import { handleDownloadAsset } from '$lib/services/asset.service';
 
 export const getAlbumsActions = ($t: MessageFormatter) => {
   const Create: ActionItem = {
@@ -282,19 +280,14 @@ export const handleDeleteAlbum = async (album: AlbumResponseDto, options?: { pro
   }
 };
 
-export const handleDownloadAlbum = async (album: AlbumResponseDto) => {
-  // Small albums on mobile: share each photo so it can be saved to Photos/Gallery.
-  if (isMobileDownloadClient() && album.assets?.length > 0 && album.assets.length <= 20) {
-    for (const [index, asset] of album.assets.entries()) {
-      await handleDownloadAsset(asset, { edited: true });
-      if (index < album.assets.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 400));
-      }
-    }
+export const handleDownloadAlbum = async (album: AlbumResponseDto, format: 'jpg' | 'raw' = 'raw') => {
+  const safeAlbumName = album.albumName || 'album';
+  if (format === 'jpg') {
+    await downloadArchive(`${safeAlbumName}-jpg.zip`, { albumId: album.id, edited: true, downloadFormat: 'jpg' });
     return;
   }
 
-  await downloadArchive(`${album.albumName}.zip`, { albumId: album.id });
+  await downloadArchive(`${safeAlbumName}-raw.zip`, { albumId: album.id, edited: false, downloadFormat: 'original' });
 };
 
 export const handleConfirmAlbumDelete = async (album: AlbumResponseDto) => {

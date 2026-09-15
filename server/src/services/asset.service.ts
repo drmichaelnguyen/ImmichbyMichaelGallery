@@ -610,6 +610,9 @@ export class AssetService extends BaseService {
       if (edits.some((edit) => edit.action === AssetEditAction.ColorAdjust)) {
         throw new BadRequestException('Color adjustments are not supported for videos');
       }
+      if (edits.some((edit) => edit.action === AssetEditAction.LocalAdjust)) {
+        throw new BadRequestException('Local adjustments are not supported for videos');
+      }
       return;
     }
 

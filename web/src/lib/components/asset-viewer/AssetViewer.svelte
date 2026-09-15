@@ -47,6 +47,7 @@
   import DetailPanel from './DetailPanel.svelte';
   import EditorPanel from './editor/EditorPanel.svelte';
   import CropArea from './editor/transform-tool/CropArea.svelte';
+  import LocalMaskArea from './editor/local-tool/LocalMaskArea.svelte';
   import ImagePanoramaViewer from './ImagePanoramaViewer.svelte';
   import OcrButton from './OcrButton.svelte';
   import PhotoViewer from './PhotoViewer.svelte';
@@ -431,6 +432,9 @@
     if (assetViewerManager.isShowEditor && editManager.selectedTool?.type === EditToolType.Transform) {
       return 'CropArea';
     }
+    if (assetViewerManager.isShowEditor && editManager.selectedTool?.type === EditToolType.Local) {
+      return 'LocalMaskArea';
+    }
     return 'PhotoViewer';
   });
 
@@ -459,7 +463,11 @@
   const isMobileEditor = $derived(mediaQueryManager.maxMd && assetViewerManager.isShowEditor);
 
   const mobileEditorInset = $derived(
-    editManager.selectedTool?.type === EditToolType.Transform ? 'min(42dvh,400px)' : 'min(52dvh,480px)',
+    editManager.selectedTool?.type === EditToolType.Transform
+      ? 'min(42dvh,400px)'
+      : editManager.selectedTool?.type === EditToolType.Local
+        ? 'min(56dvh,520px)'
+        : 'min(52dvh,480px)',
   );
 
   const onSwipe = (event: SwipeCustomEvent) => {
@@ -576,6 +584,8 @@
       <ImagePanoramaViewer {asset} />
     {:else if viewerKind === 'CropArea'}
       <CropArea {asset} />
+    {:else if viewerKind === 'LocalMaskArea'}
+      <LocalMaskArea {asset} />
     {:else if viewerKind === 'PhotoViewer'}
       <PhotoViewer cursor={{ ...cursor, current: asset }} {sharedLink} {onSwipe} />
     {:else if viewerKind === 'VideoViewer'}

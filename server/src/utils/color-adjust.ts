@@ -49,17 +49,18 @@ export const applyColorAdjust = (pipeline: sharp.Sharp, params: Partial<ColorAdj
   }
 
   if (values.shadows > 0) {
+    // sharp.gamma() only accepts [1, 3]; 1/(1+x) is always < 1 and crashes the worker.
+    // Lift shadows with a linear offset instead.
     const amount = values.shadows / 100;
-    pipeline = pipeline.gamma(1 / (1 + amount * 0.45));
     pipeline = pipeline.linear(1, amount * 18);
   } else if (values.shadows < 0) {
     const amount = -values.shadows / 100;
-    pipeline = pipeline.gamma(1 + amount * 0.35);
+    pipeline = pipeline.gamma(clampGamma(1 + amount * 0.35));
   }
 
   if (values.highlights > 0) {
     const amount = values.highlights / 100;
-    pipeline = pipeline.gamma(1 + amount * 0.3);
+    pipeline = pipeline.gamma(clampGamma(1 + amount * 0.3));
   } else if (values.highlights < 0) {
     const amount = -values.highlights / 100;
     pipeline = pipeline.linear(1 - amount * 0.25, amount * 15);
@@ -71,7 +72,8 @@ export const applyColorAdjust = (pipeline: sharp.Sharp, params: Partial<ColorAdj
   if (values.clarity > 0) {
     pipeline = pipeline.sharpen({ sigma: 0.8 + values.clarity / 80, m1: 0.5, m2: 2 + values.clarity / 50 });
   } else if (values.clarity < 0) {
-    pipeline = pipeline.blur(-values.clarity / 60);
+    // sharp.blur() requires sigma in [0.3, 1000]; small negative clarity would otherwise crash the worker
+    pipeline = pipeline.blur(clampBlurSigma(-values.clarity / 60));
   }
 
   return pipeline;
@@ -118,3 +120,9 @@ const applyTint = (pipeline: sharp.Sharp, tint: number): sharp.Sharp => {
 };
 
 const clampMultiplier = (value: number) => Math.min(3, Math.max(0.2, value));
+
+/** sharp.gamma() rejects values outside [1, 3] and an uncaught throw kills the microservices worker. */
+const clampGamma = (value: number) => Math.min(3, Math.max(1, value));
+
+/** sharp.blur() rejects sigma outside [0.3, 1000] and an uncaught throw kills the microservices worker. */
+const clampBlurSigma = (value: number) => Math.min(1000, Math.max(0.3, value));

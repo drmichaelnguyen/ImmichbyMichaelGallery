@@ -1,10 +1,12 @@
 import { editAsset, removeAssetEdits, type AssetEditsCreateDto, type AssetResponseDto } from '@immich/sdk';
 import { ConfirmModal, modalManager, toastManager } from '@immich/ui';
-import { mdiCropRotate, mdiTune } from '@mdi/js';
+import { mdiBrush, mdiCropRotate, mdiTune } from '@mdi/js';
 import type { Component } from 'svelte';
 import ColorTool from '$lib/components/asset-viewer/editor/color-tool/ColorTool.svelte';
+import LocalTool from '$lib/components/asset-viewer/editor/local-tool/LocalTool.svelte';
 import TransformTool from '$lib/components/asset-viewer/editor/transform-tool/TransformTool.svelte';
 import { colorManager } from '$lib/managers/edit/color-manager.svelte';
+import { localManager } from '$lib/managers/edit/local-manager.svelte';
 import { transformManager } from '$lib/managers/edit/transform-manager.svelte';
 import { eventManager } from '$lib/managers/event-manager.svelte';
 import { handleDownloadRenderedEdits } from '$lib/services/asset.service';
@@ -27,6 +29,7 @@ export interface EditToolManager {
 export enum EditToolType {
   Transform = 'transform',
   Color = 'color',
+  Local = 'local',
 }
 
 export interface EditTool {
@@ -55,6 +58,12 @@ export class EditManager {
         icon: mdiTune,
         component: ColorTool,
         manager: colorManager,
+      },
+      {
+        type: EditToolType.Local,
+        icon: mdiBrush,
+        component: LocalTool,
+        manager: localManager,
       },
     ];
   }
@@ -156,6 +165,7 @@ export class EditManager {
     }
     transformManager.reset();
     void colorManager.resetAllChanges();
+    void localManager.resetAllChanges();
     this.currentAsset = null;
     this.selectedTool = null;
   }
@@ -183,7 +193,7 @@ export class EditManager {
 
     try {
       // Setup the websocket listener before sending the edit request
-      const editCompleted = waitForWebsocketEvent('AssetEditReadyV2', (event) => event.asset.id === assetId, 10_000);
+      const editCompleted = waitForWebsocketEvent('AssetEditReadyV2', (event) => event.asset.id === assetId, 120_000);
 
       await (edits.length === 0
         ? removeAssetEdits({ id: assetId })

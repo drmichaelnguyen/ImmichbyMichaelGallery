@@ -529,6 +529,32 @@ export const shareOrDownloadBlob = async (data: Blob, filename: string) => {
   downloadBlob(typedBlob, filename);
 };
 
+export const shareOrDownloadFiles = async (files: File[], filename: string) => {
+  const validFiles = files.filter((file) => file.size > 0);
+  if (validFiles.length === 0) {
+    throw new TypeError('Cannot download empty files');
+  }
+
+  if (validFiles.length === 1) {
+    await shareOrDownloadBlob(validFiles[0], validFiles[0].name);
+    return;
+  }
+
+  if (isMobileDownloadClient() && canShareFiles(validFiles)) {
+    const { modalManager } = await import('@immich/ui');
+    const SaveToPhotosModal = (await import('$lib/modals/SaveToPhotosModal.svelte')).default;
+    await modalManager.show(SaveToPhotosModal, { files: validFiles, filename });
+    return;
+  }
+
+  for (const [index, file] of validFiles.entries()) {
+    if (index > 0) {
+      await sleep(300);
+    }
+    downloadBlob(file, file.name);
+  }
+};
+
 export const downloadJson = (data: unknown, filename: string) => {
   const blob = new Blob([JSON.stringify(data, jsonReplacer, 2)], { type: 'application/json' });
   const downloadKey = filename;
