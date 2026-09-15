@@ -36,7 +36,8 @@
   import { locale } from '$lib/stores/preferences.store';
   import { preferences } from '$lib/stores/user.store';
   import { websocketEvents } from '$lib/stores/websocket';
-  import { getPeopleThumbnailUrl } from '$lib/utils';
+  import { getPeopleThumbnailUrl, handlePromiseError } from '$lib/utils';
+  import { selectAllAssets } from '$lib/utils/asset-utils';
   import { handleError } from '$lib/utils/handle-error';
   import { isExternalUrl } from '$lib/utils/navigation';
   import { AssetVisibility, searchPerson, updatePerson, type PersonResponseDto } from '@immich/sdk';
@@ -44,12 +45,19 @@
     ActionButton,
     CommandPaletteDefaultProvider,
     ContextMenuButton,
+    IconButton,
     LoadingSpinner,
     modalManager,
     toastManager,
     type ActionItem,
   } from '@immich/ui';
-  import { mdiAccountBoxOutline, mdiAccountMultipleCheckOutline, mdiArrowLeft, mdiDotsVertical } from '@mdi/js';
+  import {
+    mdiAccountBoxOutline,
+    mdiAccountMultipleCheckOutline,
+    mdiArrowLeft,
+    mdiDotsVertical,
+    mdiSelectAll,
+  } from '@mdi/js';
   import { DateTime } from 'luxon';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -322,6 +330,10 @@
       viewMode = PersonPageViewMode.MERGE_PEOPLE;
     },
   };
+
+  const handleSelectAllPersonAssets = () => {
+    handlePromiseError(selectAllAssets(timelineManager, assetMultiSelectManager));
+  };
 </script>
 
 <OnEvents
@@ -498,6 +510,16 @@
     {#if viewMode === PersonPageViewMode.VIEW_ASSETS}
       <ControlAppBar showBackButton backIcon={mdiArrowLeft} onClose={() => goto(previousRoute)}>
         {#snippet trailing()}
+          {#if numberOfAssets > 0}
+            <IconButton
+              shape="round"
+              color="secondary"
+              variant="ghost"
+              aria-label={$t('select_all')}
+              icon={mdiSelectAll}
+              onclick={handleSelectAllPersonAssets}
+            />
+          {/if}
           <ContextMenuButton
             items={[SelectFeaturePhoto, HidePerson, ShowPerson, SetDateOfBirth, Merge, Favorite, Unfavorite]}
             aria-label={$t('open')}

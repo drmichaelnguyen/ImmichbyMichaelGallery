@@ -5,8 +5,8 @@
 <script lang="ts">
   import { page } from '$app/state';
   import { clickOutside } from '$lib/actions/click-outside';
-  import NotificationPanel from '$lib/components/shared-components/navigation-bar/notification-panel.svelte';
-  import SearchBar from '$lib/components/shared-components/search-bar/search-bar.svelte';
+  import NotificationPanel from '$lib/components/shared-components/navigation-bar/NotificationPanel.svelte';
+  import SearchBar from '$lib/components/shared-components/search-bar/SearchBar.svelte';
   import SkipLink from '$lib/elements/SkipLink.svelte';
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
@@ -15,15 +15,14 @@
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
   import { notificationManager } from '$lib/stores/notification-manager.svelte';
   import { sidebarStore } from '$lib/stores/sidebar.svelte';
-  import { user } from '$lib/stores/user.store';
   import { ActionButton, Button, IconButton } from '@immich/ui';
   import GalleryLogo from '$lib/components/shared-components/GalleryLogo.svelte';
   import { mdiBellBadge, mdiBellOutline, mdiMagnify, mdiMenu, mdiTrayArrowUp } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
-  import ThemeButton from '../theme-button.svelte';
-  import UserAvatar from '../user-avatar.svelte';
-  import AccountInfoPanel from './account-info-panel.svelte';
+  import ThemeButton from '../ThemeButton.svelte';
+  import UserAvatar from '../UserAvatar.svelte';
+  import AccountInfoPanel from './AccountInfoPanel.svelte';
 
   type Props = {
     onUploadClick?: () => void;
@@ -51,14 +50,14 @@
 
 <svelte:window bind:innerWidth />
 
-<nav id="dashboard-navbar" class="max-md:h-(--navbar-height-md) h-(--navbar-height) w-dvw text-sm">
+<nav id="dashboard-navbar" class="h-(--navbar-height) w-dvw text-sm max-md:h-(--navbar-height-md)">
   <SkipLink text={$t('skip_to_content')} />
   <div
     class="grid h-full grid-cols-[--spacing(32)_auto] items-center py-2 sidebar:grid-cols-[--spacing(64)_auto] {noBorder
       ? ''
       : 'border-b'}"
   >
-    <div class="flex flex-row gap-1 mx-4 items-center">
+    <div class="mx-4 flex flex-row items-center gap-1">
       <IconButton
         id={menuButtonId}
         shape="round"
@@ -82,14 +81,14 @@
         <GalleryLogo variant="inline" class="max-md:h-12 max-md:text-sm" />
       </a>
     </div>
-    <div class="flex justify-between gap-4 lg:gap-8 pe-6">
-      <div class="hidden w-full max-w-5xl flex-1 tall:ps-0 sm:block">
+    <div class="flex justify-between gap-4 pe-6 lg:gap-8">
+      <div class="hidden w-full max-w-5xl flex-1 sm:block tall:ps-0">
         {#if featureFlagsManager.value.search}
           <SearchBar grayTheme={true} />
         {/if}
       </div>
 
-      <section class="flex place-items-center justify-end gap-1 md:gap-2 w-full sm:w-auto">
+      <section class="flex w-full place-items-center justify-end gap-1 sm:w-auto md:gap-2">
         {#if featureFlagsManager.value.search}
           <IconButton
             color="secondary"
@@ -148,7 +147,7 @@
 
             {#if hasUnreadNotifications}
               <div
-                class="pointer-events-none absolute border top-0 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-light"
+                class="pointer-events-none absolute top-0 right-1 flex size-5 items-center justify-center rounded-full border bg-primary text-[10px] font-bold text-light"
               >
                 {notificationManager.notifications.length}
               </div>
@@ -172,18 +171,15 @@
             type="button"
             class="flex ps-2"
             onclick={() => (shouldShowAccountInfoPanel = !shouldShowAccountInfoPanel)}
-            title={`${$user.name} (${$user.email})`}
+            title="{authManager.user.name} ({authManager.user.email})"
           >
-            {#key $user}
-              <UserAvatar user={$user} size="md" noTitle interactive />
+            {#key authManager.user}
+              <UserAvatar user={authManager.user} size="md" noTitle interactive />
             {/key}
           </button>
 
           {#if shouldShowAccountInfoPanel}
-            <AccountInfoPanel
-              onLogout={() => authManager.logout()}
-              onClose={() => (shouldShowAccountInfoPanel = false)}
-            />
+            <AccountInfoPanel onClose={() => (shouldShowAccountInfoPanel = false)} />
           {/if}
         </div>
       </section>

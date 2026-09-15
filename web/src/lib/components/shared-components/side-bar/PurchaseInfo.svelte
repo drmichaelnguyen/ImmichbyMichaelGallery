@@ -5,7 +5,6 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import PurchaseModal from '$lib/modals/PurchaseModal.svelte';
   import { Route } from '$lib/route';
-  import { preferences } from '$lib/stores/user.store';
   import { getAccountAge } from '$lib/utils/auth';
   import { handleError } from '$lib/utils/handle-error';
   import { getButtonVisibility } from '$lib/utils/purchase-utils';
@@ -51,7 +50,8 @@
         },
       });
 
-      preferences.set(response);
+      authManager.setPreferences(response);
+
       showBuyButton = getButtonVisibility();
       showMessage = false;
     } catch (error) {
@@ -71,10 +71,10 @@
 </script>
 
 <div class="license-status ps-4 text-sm">
-  {#if authManager.isPurchased && $preferences.purchase.showSupportBadge}
+  {#if authManager.isPurchased && authManager.preferences.purchase.showSupportBadge}
     <button
       onclick={() => goto(Route.userSettings({ isOpen: OpenQueryParam.PURCHASE_SETTINGS }))}
-      class="w-full mt-2"
+      class="mt-2 w-full"
       type="button"
     >
       <SupporterBadge size="small" effect="always" />
@@ -87,18 +87,18 @@
       onmouseleave={() => (hoverButton = false)}
       onfocus={onButtonHover}
       onblur={() => (hoverButton = false)}
-      class="p-2 flex justify-between place-items-center place-content-center border border-immich-primary/20 dark:border-immich-dark-primary/10 mt-2 rounded-lg shadow-md dark:bg-immich-dark-primary/10 min-w-52 w-full"
+      class="mt-2 flex w-full min-w-52 place-content-center place-items-center justify-between rounded-lg border border-immich-primary/20 p-2 shadow-md dark:border-immich-dark-primary/10 dark:bg-immich-dark-primary/10"
     >
-      <div class="flex justify-between w-full place-items-center place-content-center">
-        <div class="flex place-items-center place-content-center gap-1">
+      <div class="flex w-full place-content-center place-items-center justify-between">
+        <div class="flex place-content-center place-items-center gap-1">
           <GalleryLogo variant="inline" size="tiny" />
-          <p class="flex text-primary font-medium">
+          <p class="flex font-medium text-primary">
             {$t('purchase_button_buy_immich')}
           </p>
         </div>
 
         <div>
-          <Icon icon={mdiInformationOutline} class="hidden sidebar:flex text-primary font-medium" size="18" />
+          <Icon icon={mdiInformationOutline} class="hidden font-medium text-primary sidebar:flex" size="18" />
         </div>
       </div>
     </button>
@@ -109,15 +109,15 @@
   {#if showMessage}
     <dialog
       open
-      class="hidden sidebar:block w-125 absolute bottom-19 start-64 bg-gray-50 dark:border-gray-800 border border-gray-200 dark:bg-immich-dark-gray dark:text-white text-black rounded-3xl shadow-2xl px-8 py-6"
+      class="absolute inset-s-64 bottom-19 hidden w-125 rounded-3xl border border-gray-200 bg-gray-50 px-8 py-6 text-black shadow-2xl sidebar:block dark:border-gray-800 dark:bg-immich-dark-gray dark:text-white"
       transition:fade={{ duration: 150 }}
       onmouseover={() => (hoverMessage = true)}
       onmouseleave={() => (hoverMessage = false)}
       onfocus={() => (hoverMessage = true)}
       onblur={() => (hoverMessage = false)}
     >
-      <div class="flex justify-between place-items-center">
-        <div class="h-10 w-10">
+      <div class="flex place-items-center justify-between">
+        <div class="size-10">
           <GalleryLogo variant="inline" size="small" />
         </div>
         <IconButton
@@ -134,11 +134,11 @@
         />
       </div>
 
-      <h1 class="text-lg font-medium my-3 text-primary">
+      <h1 class="my-3 text-lg font-medium text-primary">
         {$t('purchase_panel_title')}
       </h1>
 
-      <div class="text-gray-800 dark:text-white my-4">
+      <div class="my-4 text-gray-800 dark:text-white">
         <p>
           {$t('purchase_panel_info_1')}
         </p>

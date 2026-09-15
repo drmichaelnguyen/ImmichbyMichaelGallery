@@ -1,6 +1,6 @@
 <script lang="ts">
   import { shortcut } from '$lib/actions/shortcut';
-  import AlbumMap from '$lib/components/album-page/album-map.svelte';
+  import AlbumMap from '$lib/components/album-page/AlbumMap.svelte';
   import DownloadAction from '$lib/components/timeline/actions/DownloadAction.svelte';
   import SelectAllAssets from '$lib/components/timeline/actions/SelectAllAction.svelte';
   import AssetSelectControlBar from '$lib/components/timeline/AssetSelectControlBar.svelte';
@@ -13,6 +13,7 @@
   import { getGlobalActions } from '$lib/services/app.service';
   import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
+  import { preferUnenhancedSharedThumbnails } from '$lib/stores/preferences.store';
   import { SlideshowNavigation, SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
   import { handlePromiseError } from '$lib/utils';
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
@@ -21,9 +22,9 @@
   import GalleryLogo from '$lib/components/shared-components/GalleryLogo.svelte';
   import { mdiDownload, mdiFileImagePlusOutline, mdiPresentationPlay } from '@mdi/js';
   import { t } from 'svelte-i18n';
-  import ControlAppBar from '../shared-components/control-app-bar.svelte';
-  import ThemeButton from '../shared-components/theme-button.svelte';
-  import AlbumSummary from './album-summary.svelte';
+  import ControlAppBar from '../shared-components/ControlAppBar.svelte';
+  import ThemeButton from '../shared-components/ThemeButton.svelte';
+  import AlbumSummary from './AlbumSummary.svelte';
 
   interface Props {
     sharedLink: SharedLinkResponseDto;
@@ -71,11 +72,11 @@
   }}
 />
 
-<main class="relative h-dvh overflow-hidden px-2 md:px-6 max-md:pt-(--navbar-height-md) pt-(--navbar-height)">
+<main class="relative h-dvh overflow-hidden px-2 pt-(--navbar-height) max-md:pt-(--navbar-height-md) md:px-6">
   <Timeline enableRouting={true} {album} bind:timelineManager {options} assetInteraction={assetMultiSelectManager}>
-    <section class="pt-8 md:pt-24 px-2 md:px-0">
+    <section class="px-2 pt-8 md:px-0 md:pt-24">
       <!-- ALBUM TITLE -->
-      <h1 class="text-2xl md:text-4xl lg:text-6xl text-primary outline-none transition-all">
+      <h1 class="text-2xl text-primary transition-all outline-none md:text-4xl lg:text-6xl">
         {album.albumName}
       </h1>
 
@@ -86,7 +87,7 @@
       <!-- ALBUM DESCRIPTION -->
       {#if album.description}
         <p
-          class="whitespace-pre-line mb-12 mt-6 w-full pb-2 text-start font-medium text-base text-black dark:text-gray-300"
+          class="mt-6 mb-12 w-full pb-2 text-start text-base font-medium whitespace-pre-line text-black dark:text-gray-300"
         >
           {album.description}
         </p>
@@ -146,6 +147,15 @@
         {#if sharedLink.showMetadata && featureFlagsManager.value.map}
           <AlbumMap {album} />
         {/if}
+        <button
+          type="button"
+          class="rounded-full border px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-gray-200/70 dark:hover:bg-gray-700/60"
+          aria-label={$t('toggle_shared_standard_previews')}
+          title={$t('toggle_shared_standard_previews')}
+          onclick={() => ($preferUnenhancedSharedThumbnails = !$preferUnenhancedSharedThumbnails)}
+        >
+          {$preferUnenhancedSharedThumbnails ? $t('view_mode_standard') : $t('view_mode_enhanced')}
+        </button>
         <ThemeButton />
       {/snippet}
     </ControlAppBar>

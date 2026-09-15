@@ -11,6 +11,7 @@
   import { Route } from '$lib/route';
   import { dragAndDropFilesStore } from '$lib/stores/drag-and-drop-files.store';
   import { mediaQueryManager } from '$lib/stores/media-query-manager.svelte';
+  import { preferUnenhancedSharedThumbnails } from '$lib/stores/preferences.store';
   import { handlePromiseError } from '$lib/utils';
   import { downloadArchive } from '$lib/utils/asset-utils';
   import { fileUploadHandler, openFileUploadDialog } from '$lib/utils/file-uploader';
@@ -21,8 +22,8 @@
   import GalleryLogo from '$lib/components/shared-components/GalleryLogo.svelte';
   import { mdiArrowLeft, mdiDownload, mdiFileImagePlusOutline, mdiSelectAll } from '@mdi/js';
   import { t } from 'svelte-i18n';
-  import ControlAppBar from '../shared-components/control-app-bar.svelte';
-  import GalleryViewer from '../shared-components/gallery-viewer/gallery-viewer.svelte';
+  import ControlAppBar from '../shared-components/ControlAppBar.svelte';
+  import GalleryViewer from '../shared-components/gallery-viewer/GalleryViewer.svelte';
 
   interface Props {
     sharedLink: SharedLinkResponseDto;
@@ -75,11 +76,11 @@
 </script>
 
 {#if sharedLink?.allowUpload || assets.length > 1}
-  <main class="mt-24 mb-40 mx-4 isolate" bind:clientHeight={viewport.height} bind:clientWidth={viewport.width}>
+  <main class="isolate mx-4 mt-24 mb-40" bind:clientHeight={viewport.height} bind:clientWidth={viewport.width}>
     <GalleryViewer {assets} assetInteraction={assetMultiSelectManager} {viewport} allowDeletion={false} />
   </main>
 
-  <header class="fixed top-0 inset-s-0 w-full">
+  <header class="fixed inset-s-0 top-0 w-full">
     {#if assetMultiSelectManager.selectionActive}
       <AssetSelectControlBar>
         <IconButton
@@ -127,13 +128,22 @@
               icon={mdiDownload}
             />
           {/if}
+          <button
+            type="button"
+            class="rounded-full border px-3 py-1 text-xs font-medium text-primary transition-colors hover:bg-gray-200/70 dark:hover:bg-gray-700/60"
+            aria-label={$t('toggle_shared_standard_previews')}
+            title={$t('toggle_shared_standard_previews')}
+            onclick={() => ($preferUnenhancedSharedThumbnails = !$preferUnenhancedSharedThumbnails)}
+          >
+            {$preferUnenhancedSharedThumbnails ? $t('view_mode_standard') : $t('view_mode_enhanced')}
+          </button>
         {/snippet}
       </ControlAppBar>
     {/if}
   </header>
 {:else if assets.length === 1}
   {#await getAssetInfo({ ...authManager.params, id: assets[0].id }) then asset}
-    {#await import('$lib/components/asset-viewer/asset-viewer.svelte') then { default: AssetViewer }}
+    {#await import('$lib/components/asset-viewer/AssetViewer.svelte') then { default: AssetViewer }}
       <AssetViewer cursor={{ current: asset }} onAction={handleAction} />
     {/await}
   {/await}
