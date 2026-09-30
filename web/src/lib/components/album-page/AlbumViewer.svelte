@@ -28,6 +28,7 @@
   import { getAlbumMapMarkers, type AlbumResponseDto, type MapMarkerResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
   import { ActionButton, IconButton } from '@immich/ui';
   import GalleryLogo from '$lib/components/shared-components/GalleryLogo.svelte';
+  import JpgRawDownloadButtons from '$lib/components/shared-components/JpgRawDownloadButtons.svelte';
   import { mdiFileImagePlusOutline, mdiPresentationPlay } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -199,26 +200,10 @@
             onclick={handleStartSlideshow}
             icon={mdiPresentationPlay}
           />
-          <div class="flex items-center gap-1">
-            <button
-              type="button"
-              class="inline-flex items-center rounded-full border border-white/50 bg-white/20 px-2.5 py-1 text-[11px] font-bold tracking-wide text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-white/35"
-              aria-label={`${$t('download')} JPG`}
-              title={`${$t('download')} JPG`}
-              onclick={() => handleDownloadAlbum(album, 'jpg')}
-            >
-              JPG
-            </button>
-            <button
-              type="button"
-              class="inline-flex items-center rounded-full border border-amber-200/70 bg-amber-500/30 px-2.5 py-1 text-[11px] font-bold tracking-wide text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-amber-500/45"
-              aria-label={`${$t('download')} RAW`}
-              title={`${$t('download')} RAW`}
-              onclick={() => handleDownloadAlbum(album, 'raw')}
-            >
-              RAW
-            </button>
-          </div>
+          <JpgRawDownloadButtons
+            onDownloadJpg={() => handleDownloadAlbum(album, 'jpg')}
+            onDownloadRaw={() => handleDownloadAlbum(album, 'raw')}
+          />
         {/if}
         {#if sharedLink.showMetadata && featureFlagsManager.value.map}
           <AlbumMap {album} />

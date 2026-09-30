@@ -935,6 +935,7 @@
   "download_original_file": "{format}",
   "download_jpg_label": "JPG",
   "download_raw_label": "RAW",
+  "download_in_app_browser_hint": "Downloads are limited inside chat apps. Use the menu to Open in browser (Safari/Chrome), then download again. Or long-press the image and choose Save.",
   "download_paused": "Download paused",
   "download_settings": "Download",
   "download_settings_description": "Manage settings related to asset download",

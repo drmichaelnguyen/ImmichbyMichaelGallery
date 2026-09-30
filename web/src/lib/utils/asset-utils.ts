@@ -28,7 +28,7 @@ import { eventManager } from '$lib/managers/event-manager.svelte';
 import { TimelineManager } from '$lib/managers/timeline-manager/timeline-manager.svelte';
 import type { TimelineAsset } from '$lib/managers/timeline-manager/types';
 import { locale } from '$lib/stores/preferences.store';
-import { downloadUrlPost, withError } from '$lib/utils';
+import { downloadUrlPost, isRestrictedInAppBrowser, withError } from '$lib/utils';
 import { getByteUnitString } from '$lib/utils/byte-units';
 import { getFormatter } from '$lib/utils/i18n';
 import { navigate } from '$lib/utils/navigation';
@@ -122,6 +122,9 @@ export const downloadArchive = async (
           }),
           { timeout: 10_000 },
         );
+        if (isRestrictedInAppBrowser()) {
+          toastManager.info($t('download_in_app_browser_hint'), { timeout: 12_000 });
+        }
       }
     } catch (error) {
       const $t = get(t);

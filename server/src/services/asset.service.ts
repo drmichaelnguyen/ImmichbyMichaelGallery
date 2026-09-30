@@ -51,6 +51,7 @@ import {
 import { updateLockedColumns } from 'src/utils/database';
 import { extractTimeZone } from 'src/utils/date';
 import { getFileNameWithoutExtension, ImmichFileResponse } from 'src/utils/file';
+import { mimeTypes } from 'src/utils/mime-types';
 import { batched, findOrFail } from 'src/utils/misc';
 import { transformOcrBoundingBox } from 'src/utils/transform';
 
@@ -569,10 +570,13 @@ export class AssetService extends BaseService {
 
     const { image } = await this.getConfig({ withCache: true });
     const tempPath = join(tmpdir(), `immich-render-${randomUUID()}.jpg`);
+    const isRaw = mimeTypes.isRaw(asset.originalFileName);
+    const source = await this.mediaRepository.resolveRenderableImageSource(asset.originalPath!, isRaw);
 
-    await this.mediaRepository.renderImageWithEdits(asset.originalPath!, tempPath, {
+    await this.mediaRepository.renderImageWithEdits(source, tempPath, {
       colorspace: image.colorspace,
       processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
+      // Embedded RAW previews lack EXIF orientation; apply asset orientation in either case.
       orientation: (asset.orientation as ExifOrientation | null) ?? undefined,
       edits,
     });

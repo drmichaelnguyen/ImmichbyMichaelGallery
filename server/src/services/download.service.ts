@@ -9,6 +9,7 @@ import { AssetType, ExifOrientation, Permission } from 'src/enum';
 import { ImmichReadStream, ImmichZipStream } from 'src/repositories/storage.repository';
 import { BaseService } from 'src/services/base.service';
 import { HumanReadableSize } from 'src/utils/bytes';
+import { mimeTypes } from 'src/utils/mime-types';
 import { getPreferences } from 'src/utils/preferences';
 
 @Injectable()
@@ -200,7 +201,9 @@ export class DownloadService extends BaseService {
             action,
             parameters,
           })) as AssetEditActionItem[];
-          const buffer = await this.mediaRepository.renderImageBufferWithEdits(asset.originalPath, {
+          const isRaw = mimeTypes.isRaw(asset.originalFileName);
+          const source = await this.mediaRepository.resolveRenderableImageSource(asset.originalPath, isRaw);
+          const buffer = await this.mediaRepository.renderImageBufferWithEdits(source, {
             colorspace: image.colorspace,
             processInvalidImages: process.env.IMMICH_PROCESS_INVALID_IMAGES === 'true',
             orientation: (asset.orientation as ExifOrientation | null) ?? undefined,

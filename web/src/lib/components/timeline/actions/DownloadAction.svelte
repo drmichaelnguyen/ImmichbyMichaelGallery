@@ -7,6 +7,7 @@
   import { downloadManager } from '$lib/managers/download-manager.svelte';
   import { downloadGalleryPhotoFile, handleDownloadAsset } from '$lib/services/asset.service';
   import { isMobileDownloadClient, shareOrDownloadFiles } from '$lib/utils';
+  import JpgRawDownloadButtons from '$lib/components/shared-components/JpgRawDownloadButtons.svelte';
   import { downloadArchive } from '$lib/utils/asset-utils';
   import { handleError } from '$lib/utils/handle-error';
   import { AssetTypeEnum, getAssetInfo } from '@immich/sdk';
@@ -117,24 +118,8 @@
   <MenuOption text="JPG" icon={mdiDownload} onClick={() => handleDownloadFiles('jpg')} />
   <MenuOption text="RAW" icon={mdiDownload} onClick={() => handleDownloadFiles('raw')} />
 {:else}
-  <div class="flex items-center gap-1">
-    <button
-      type="button"
-      class="inline-flex items-center rounded-full border border-white/50 bg-white/20 px-2.5 py-1 text-[11px] font-bold tracking-wide text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-white/35"
-      aria-label={`${$t('download')} JPG`}
-      title={`${$t('download')} JPG`}
-      onclick={() => handleDownloadFiles('jpg')}
-    >
-      JPG
-    </button>
-    <button
-      type="button"
-      class="inline-flex items-center rounded-full border border-amber-200/70 bg-amber-500/30 px-2.5 py-1 text-[11px] font-bold tracking-wide text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-amber-500/45"
-      aria-label={`${$t('download')} RAW`}
-      title={`${$t('download')} RAW`}
-      onclick={() => handleDownloadFiles('raw')}
-    >
-      RAW
-    </button>
-  </div>
+  <JpgRawDownloadButtons
+    onDownloadJpg={() => handleDownloadFiles('jpg')}
+    onDownloadRaw={() => handleDownloadFiles('raw')}
+  />
 {/if}

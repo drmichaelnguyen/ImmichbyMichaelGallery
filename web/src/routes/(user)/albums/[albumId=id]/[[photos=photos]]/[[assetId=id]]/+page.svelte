@@ -11,6 +11,7 @@
   import ButtonContextMenu from '$lib/components/shared-components/context-menu/ButtonContextMenu.svelte';
   import MenuOption from '$lib/components/shared-components/context-menu/MenuOption.svelte';
   import ControlAppBar from '$lib/components/shared-components/ControlAppBar.svelte';
+  import JpgRawDownloadButtons from '$lib/components/shared-components/JpgRawDownloadButtons.svelte';
   import UserAvatar from '$lib/components/shared-components/UserAvatar.svelte';
   import ArchiveAction from '$lib/components/timeline/actions/ArchiveAction.svelte';
   import ChangeDate from '$lib/components/timeline/actions/ChangeDateAction.svelte';
@@ -545,26 +546,10 @@
                 onclick={handleStartSlideshow}
                 icon={mdiPresentationPlay}
               />
-              <div class="flex items-center gap-1">
-                <button
-                  type="button"
-                  class="inline-flex items-center rounded-full border border-white/50 bg-white/20 px-2.5 py-1 text-[11px] font-bold tracking-wide text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-white/35"
-                  aria-label={`${$t('download')} JPG`}
-                  title={`${$t('download')} JPG`}
-                  onclick={() => handleDownloadAlbum(album, 'jpg')}
-                >
-                  JPG
-                </button>
-                <button
-                  type="button"
-                  class="inline-flex items-center rounded-full border border-amber-200/70 bg-amber-500/30 px-2.5 py-1 text-[11px] font-bold tracking-wide text-white shadow-sm backdrop-blur-sm transition-colors hover:bg-amber-500/45"
-                  aria-label={`${$t('download')} RAW`}
-                  title={`${$t('download')} RAW`}
-                  onclick={() => handleDownloadAlbum(album, 'raw')}
-                >
-                  RAW
-                </button>
-              </div>
+              <JpgRawDownloadButtons
+                onDownloadJpg={() => handleDownloadAlbum(album, 'jpg')}
+                onDownloadRaw={() => handleDownloadAlbum(album, 'raw')}
+              />
             {/if}
 
             {#if isOwned || containsEditors}

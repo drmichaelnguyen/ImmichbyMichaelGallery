@@ -225,7 +225,7 @@ export class MediaRepository {
   }
 
   async renderImageWithEdits(
-    input: string,
+    input: string | Buffer,
     output: string,
     options: DecodeToBufferOptions & { edits: AssetEditActionItem[] },
   ): Promise<void> {
@@ -234,11 +234,28 @@ export class MediaRepository {
   }
 
   async renderImageBufferWithEdits(
-    input: string,
+    input: string | Buffer,
     options: DecodeToBufferOptions & { edits: AssetEditActionItem[] },
   ): Promise<Buffer> {
     const pipeline = await this.getImageDecodingPipeline(input, options);
     return pipeline.jpeg({ quality: 92, mozjpeg: true }).toBuffer();
+  }
+
+  /**
+   * Sharp cannot reliably decode many camera RAW formats (often yields black frames).
+   * Prefer the embedded JPEG/JXL preview when present.
+   */
+  async resolveRenderableImageSource(originalPath: string, isRaw: boolean): Promise<string | Buffer> {
+    if (!isRaw) {
+      return originalPath;
+    }
+
+    const extracted = await this.extract(originalPath);
+    if (extracted?.buffer?.length) {
+      return extracted.buffer;
+    }
+
+    return originalPath;
   }
 
   private async getImageDecodingPipeline(input: string | Buffer, options: DecodeToBufferOptions) {

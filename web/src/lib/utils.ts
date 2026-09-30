@@ -322,10 +322,25 @@ export const downloadBlob = (data: Blob, filename: string) => {
   anchor.href = url;
   anchor.download = filename;
   anchor.rel = 'noopener';
+  // Messenger / FB / Instagram WebViews ignore `download` and often block blob saves.
+  // Opening in a new tab still lets the user long-press → Save Image.
+  if (isRestrictedInAppBrowser()) {
+    anchor.target = '_blank';
+    anchor.removeAttribute('download');
+  }
   document.body.append(anchor);
   anchor.click();
   anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 60_000);
+};
+
+/** JPEG SOI marker — rejects RAW/WebP bytes wrongly labeled as image/jpeg. */
+export const blobHasJpegMagic = async (data: Blob): Promise<boolean> => {
+  if (!(data instanceof Blob) || data.size < 3) {
+    return false;
+  }
+  const header = new Uint8Array(await data.slice(0, 3).arrayBuffer());
+  return header[0] === 0xff && header[1] === 0xd8 && header[2] === 0xff;
 };
 
 /**
@@ -521,6 +536,21 @@ export const isMobileDownloadClient = () => {
   return navigator.maxTouchPoints > 1 && /Macintosh/i.test(ua);
 };
 
+/**
+ * Facebook Messenger / Instagram / Facebook in-app browsers block blob downloads
+ * and often break Web Share. Prefer form-POST archive downloads + open-in-browser hints.
+ */
+export const isRestrictedInAppBrowser = () => {
+  if (typeof navigator === 'undefined') {
+    return false;
+  }
+
+  const ua = navigator.userAgent;
+  return /FBAN|FBAV|FB_IAB|FBIOS|FBSS|Messenger|IABMV|Instagram|Line\/|MicroMessenger|Snapchat|TikTok/i.test(
+    ua,
+  );
+};
+
 const canShareFiles = (files: File[]) => {
   if (typeof navigator === 'undefined' || typeof navigator.share !== 'function') {
     return false;
@@ -548,6 +578,16 @@ export const shareOrDownloadBlob = async (data: Blob, filename: string) => {
 
   if (isRawDownloadFilename(filename) || !isGalleryShareableFilename(filename)) {
     downloadBlob(typedBlob, filename);
+    return;
+  }
+
+  // Chat WebViews (Messenger, etc.): share + blob download are unreliable.
+  if (isRestrictedInAppBrowser()) {
+    downloadBlob(typedBlob, filename);
+    const { toastManager } = await import('@immich/ui');
+    const { get } = await import('svelte/store');
+    const { t } = await import('svelte-i18n');
+    toastManager.info(get(t)('download_in_app_browser_hint'), { timeout: 12_000 });
     return;
   }
 

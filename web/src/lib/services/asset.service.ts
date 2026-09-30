@@ -59,12 +59,16 @@ import SharedLinkCreateModal from '$lib/modals/SharedLinkCreateModal.svelte';
 import { Route } from '$lib/route';
 import { SlideshowState, slideshowStore } from '$lib/stores/slideshow.store';
 import {
+  blobHasJpegMagic,
   downloadRequest,
+  downloadUrlPost,
   getAssetMediaUrl,
   getSharedLink,
   isGalleryShareableFilename,
   isMobileDownloadClient,
   isRawDownloadFilename,
+  isRestrictedInAppBrowser,
+  normalizeImageBlobToJpeg,
   shareOrDownloadBlob,
   sleep,
 } from '$lib/utils';
@@ -97,17 +101,31 @@ const GALLERY_JPEG_RENDER_EDITS: AssetEditsCreateDto['edits'] = [
 
 const MIN_GALLERY_JPEG_BYTES = 2 * 1024;
 
-const isSuspiciousGalleryJpeg = (data: Blob) => {
+const isSuspiciousGalleryJpeg = async (data: Blob) => {
+  if (!(data instanceof Blob) || data.size < MIN_GALLERY_JPEG_BYTES) {
+    return true;
+  }
+
   const type = data.type.toLowerCase();
-  return data.size < MIN_GALLERY_JPEG_BYTES || (!!type && type !== 'image/jpeg' && type !== 'application/octet-stream');
+  if (type && type !== 'image/jpeg' && type !== 'application/octet-stream' && type !== '') {
+    // WebP/HEIC/etc. can still be re-encoded; only reject clearly wrong types later.
+  }
+
+  // RAW originals were previously saved as ".jpg" → black/corrupt photos.
+  return !(await blobHasJpegMagic(data));
 };
 
 const galleryPhotoFilename = (asset: AssetResponseDto) =>
   `${asset.originalFileName.replace(/\.[^.]+$/u, '') || asset.originalFileName}.jpg`;
 
-const toGalleryJpegFile = (data: Blob, filename: string) => {
-  const blob = data.type === 'image/jpeg' ? data : new Blob([data], { type: 'image/jpeg' });
-  return new File([blob], filename, { type: 'image/jpeg' });
+const toGalleryJpegFile = async (data: Blob, filename: string) => {
+  let jpeg = data;
+  if (!(await blobHasJpegMagic(data))) {
+    jpeg = await normalizeImageBlobToJpeg(data);
+  } else if (data.type !== 'image/jpeg') {
+    jpeg = new Blob([data], { type: 'image/jpeg' });
+  }
+  return new File([jpeg], filename, { type: 'image/jpeg' });
 };
 
 const resolveGalleryJpegEdits = async (asset: AssetResponseDto): Promise<AssetEditsCreateDto['edits']> => {
@@ -141,7 +159,40 @@ const downloadEditedOriginalAsJpeg = async (
     onDownloadProgress,
   });
 
-  if (status < 200 || status >= 300 || !(data instanceof Blob) || data.size === 0 || isSuspiciousGalleryJpeg(data)) {
+  if (
+    status < 200 ||
+    status >= 300 ||
+    !(data instanceof Blob) ||
+    data.size === 0 ||
+    (await isSuspiciousGalleryJpeg(data))
+  ) {
+    return null;
+  }
+
+  return data;
+};
+
+const downloadPreviewAsJpeg = async (
+  asset: AssetResponseDto,
+  onDownloadProgress?: (event: ProgressEvent<XMLHttpRequestEventTarget>) => void,
+) => {
+  const { data, status } = await downloadRequest({
+    url: getAssetMediaUrl({
+      id: asset.id,
+      size: AssetMediaSize.Preview,
+      edited: true,
+      cacheKey: asset.thumbhash,
+    }),
+    onDownloadProgress,
+  });
+
+  if (
+    status < 200 ||
+    status >= 300 ||
+    !(data instanceof Blob) ||
+    data.size === 0 ||
+    (await isSuspiciousGalleryJpeg(data))
+  ) {
     return null;
   }
 
@@ -155,12 +206,21 @@ export const downloadGalleryPhotoFile = async (
   const $t = await getFormatter();
   const filename = galleryPhotoFilename(asset);
   const queryParams = asQueryString(authManager.params);
+  const isRaw = isRawDownloadFilename(asset.originalFileName);
 
-  // Prefer the persisted edited fullsize JPEG when available.
+  // Prefer the persisted edited fullsize JPEG when available (magic-byte check rejects RAW originals).
   if (asset.isEdited) {
     const editedOriginal = await downloadEditedOriginalAsJpeg(asset, onDownloadProgress);
     if (editedOriginal) {
       return toGalleryJpegFile(editedOriginal, filename);
+    }
+  }
+
+  // Unedited RAW: Immich preview is already a real JPEG; avoid decoding the RAW original.
+  if (isRaw) {
+    const preview = await downloadPreviewAsJpeg(asset, onDownloadProgress);
+    if (preview) {
+      return toGalleryJpegFile(preview, filename);
     }
   }
 
@@ -176,17 +236,13 @@ export const downloadGalleryPhotoFile = async (
     throw new Error($t('errors.error_downloading', { values: { filename } }));
   }
 
-  if (isSuspiciousGalleryJpeg(data)) {
-    const fallback = await downloadRequest(
-      getAssetMediaUrl({ id: asset.id, size: AssetMediaSize.Preview, edited: true, cacheKey: asset.thumbhash }),
-    );
-
-    data = fallback.data;
-    status = fallback.status;
-
-    if (status < 200 || status >= 300 || !(data instanceof Blob) || isSuspiciousGalleryJpeg(data)) {
+  if (await isSuspiciousGalleryJpeg(data)) {
+    const fallback = await downloadPreviewAsJpeg(asset);
+    if (!fallback) {
       throw new Error($t('errors.error_downloading', { values: { filename } }));
     }
+    data = fallback;
+    status = 200;
   }
 
   return toGalleryJpegFile(data, filename);
@@ -528,6 +584,23 @@ export const handleDownloadAsset = async (
 
   const galleryFilename = asGalleryPhoto ? galleryPhotoFilename(asset) : asset.originalFileName;
 
+  // Messenger / Instagram WebViews: blob + share APIs fail. Use form POST to the
+  // archive endpoint so the browser gets a real attachment response.
+  if (isRestrictedInAppBrowser()) {
+    const queryParams = asQueryString(authManager.params);
+    const url = `${getBaseUrl()}/download/archive${queryParams ? `?${queryParams}` : ''}`;
+    const archiveStem = galleryFilename.replace(/\.[^.]+$/u, '') || galleryFilename;
+    downloadUrlPost(
+      url,
+      [asset.id],
+      archiveStem,
+      asGalleryPhoto ? true : edited,
+      asGalleryPhoto ? 'jpg' : 'original',
+    );
+    toastManager.info($t('download_in_app_browser_hint'), { timeout: 12_000 });
+    return;
+  }
+
   const assets = [
     {
       filename: galleryFilename,
@@ -573,7 +646,8 @@ export const handleDownloadAsset = async (
     downloadManager.add(filename, 1, abort);
 
     try {
-      const useShareSheet = isMobileDownloadClient() && isGalleryShareableFilename(filename);
+      const useShareSheet =
+        !isRestrictedInAppBrowser() && isMobileDownloadClient() && isGalleryShareableFilename(filename);
       toastManager.primary(
         useShareSheet ? $t('saving_to_photos') : $t('downloading_asset_filename', { values: { filename } }),
       );
@@ -582,7 +656,11 @@ export const handleDownloadAsset = async (
       let status: number;
 
       if (galleryPhoto) {
-        // Prefer edited fullsize JPEG, then re-render with persisted edits.
+        const galleryAsset = id === asset.id ? asset : await getAssetInfo({ ...authManager.params, id });
+        const isRaw = isRawDownloadFilename(galleryAsset.originalFileName);
+        let resolved: Blob | null = null;
+
+        // Prefer edited fullsize when present. Magic-byte check rejects RAW originals (black JPGs).
         if (edited) {
           const editedOriginal = await downloadRequest({
             url: getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited: true, cacheKey }),
@@ -596,27 +674,32 @@ export const handleDownloadAsset = async (
             editedOriginal.status < 300 &&
             editedOriginal.data instanceof Blob &&
             editedOriginal.data.size > 0 &&
-            !isSuspiciousGalleryJpeg(editedOriginal.data)
+            !(await isSuspiciousGalleryJpeg(editedOriginal.data))
           ) {
-            data = editedOriginal.data;
-            status = editedOriginal.status;
-          } else {
-            const galleryAsset = id === asset.id ? asset : await getAssetInfo({ ...authManager.params, id });
-            const edits = await resolveGalleryJpegEdits(galleryAsset);
-            const rendered = await downloadRequest({
-              method: 'POST',
-              url: `${getBaseUrl()}/assets/${id}/edits/render${queryParams ? `?${queryParams}` : ''}`,
-              data: { edits },
-              signal: abort.signal,
-              onDownloadProgress: (event) => {
-                downloadManager.update(filename, event.loaded, event.lengthComputable ? event.total : undefined);
-              },
-            });
-            data = rendered.data;
-            status = rendered.status;
+            resolved = editedOriginal.data;
           }
-        } else {
-          const edits = await resolveGalleryJpegEdits(asset);
+        }
+
+        if (!resolved && isRaw) {
+          const preview = await downloadRequest({
+            url: getAssetMediaUrl({ id, size: AssetMediaSize.Preview, edited: true, cacheKey }),
+            signal: abort.signal,
+            onDownloadProgress: (event) => {
+              downloadManager.update(filename, event.loaded, event.lengthComputable ? event.total : undefined);
+            },
+          });
+          if (
+            preview.status >= 200 &&
+            preview.status < 300 &&
+            preview.data instanceof Blob &&
+            !(await isSuspiciousGalleryJpeg(preview.data))
+          ) {
+            resolved = preview.data;
+          }
+        }
+
+        if (!resolved) {
+          const edits = await resolveGalleryJpegEdits(galleryAsset);
           const rendered = await downloadRequest({
             method: 'POST',
             url: `${getBaseUrl()}/assets/${id}/edits/render${queryParams ? `?${queryParams}` : ''}`,
@@ -626,9 +709,30 @@ export const handleDownloadAsset = async (
               downloadManager.update(filename, event.loaded, event.lengthComputable ? event.total : undefined);
             },
           });
-          data = rendered.data;
+          resolved = rendered.data instanceof Blob ? rendered.data : null;
           status = rendered.status;
+          if (status < 200 || status >= 300 || !resolved) {
+            throw new Error($t('errors.error_downloading', { values: { filename } }));
+          }
         }
+
+        data = resolved;
+        status = 200;
+
+        if (await isSuspiciousGalleryJpeg(data)) {
+          const fallback = await downloadRequest(
+            getAssetMediaUrl({ id, size: AssetMediaSize.Preview, edited: true, cacheKey }),
+          );
+
+          data = fallback.data;
+          status = fallback.status;
+
+          if (status < 200 || status >= 300 || !(data instanceof Blob) || (await isSuspiciousGalleryJpeg(data))) {
+            throw new Error($t('errors.error_downloading', { values: { filename } }));
+          }
+        }
+
+        data = await toGalleryJpegFile(data, filename);
       } else {
         const response = await downloadRequest({
           url: getAssetMediaUrl({ id, size: AssetMediaSize.Original, edited, cacheKey }),
@@ -639,27 +743,10 @@ export const handleDownloadAsset = async (
         });
         data = response.data;
         status = response.status;
-      }
 
-      if (status < 200 || status >= 300 || !(data instanceof Blob) || data.size === 0) {
-        throw new Error($t('errors.error_downloading', { values: { filename } }));
-      }
-
-      if (galleryPhoto && isSuspiciousGalleryJpeg(data)) {
-        const fallback = await downloadRequest(
-          getAssetMediaUrl({ id, size: AssetMediaSize.Preview, edited: true, cacheKey }),
-        );
-
-        data = fallback.data;
-        status = fallback.status;
-
-        if (status < 200 || status >= 300 || !(data instanceof Blob) || isSuspiciousGalleryJpeg(data)) {
+        if (status < 200 || status >= 300 || !(data instanceof Blob) || data.size === 0) {
           throw new Error($t('errors.error_downloading', { values: { filename } }));
         }
-      }
-
-      if (galleryPhoto) {
-        data = toGalleryJpegFile(data, filename);
       }
 
       downloadManager.update(filename, data.size, data.size);
@@ -687,6 +774,11 @@ export const handleDownloadRenderedEdits = async (
 
   if (!shouldRender) {
     await handleDownloadAsset(asset, { edited: edits.length > 0 || asset.isEdited });
+    return;
+  }
+
+  if (isRestrictedInAppBrowser()) {
+    await handleDownloadAsset(asset, { edited: true, asGalleryPhoto: true });
     return;
   }
 
