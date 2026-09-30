@@ -20,44 +20,22 @@ const proxy: Record<string, string | ProxyOptions> = {
   '/custom.css': upstream,
 };
 
-/**
- * svelte-toolbelt evaluates `styleToString(srOnlyStyles)` at module top-level.
- * When Vite bundles that into a chunk that circularly imports back into
- * style-to-css, `camelToKebab` is still undefined and the app crashes with
- * "No is not a function". Precompute the CSS string so init stays side-effect free.
- */
-const fixSrOnlyStylesCircularInit = {
-  name: 'fix-sronly-styles-circular-init',
-  enforce: 'pre' as const,
-  transform(code: string, id: string) {
-    if (!id.includes('svelte-toolbelt') || !id.includes('sr-only-styles')) {
-      return null;
-    }
-
-    return {
-      code: `export const srOnlyStyles = {
-  position: "absolute",
-  width: "1px",
-  height: "1px",
-  padding: "0",
-  margin: "-1px",
-  overflow: "hidden",
-  clip: "rect(0, 0, 0, 0)",
-  whiteSpace: "nowrap",
-  borderWidth: "0",
-  transform: "translateX(-100%)",
-};
-export const srOnlyStylesString =
-  "position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border-width: 0; transform: translateX(-100%);";
-`,
-      map: null,
-    };
-  },
-};
-
 export default defineConfig({
   build: {
     target: 'es2022',
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            {
+              // Keep module-level UI state and its dependencies out of circular app chunks.
+              name: 'immich-ui',
+              test: /[/\\]node_modules[/\\]\.pnpm[/\\]@immich\+ui@/,
+            },
+          ],
+        },
+      },
+    },
   },
   resolve: {
     alias: {
@@ -76,7 +54,6 @@ export default defineConfig({
     proxy,
   },
   plugins: [
-    fixSrOnlyStylesCircularInit,
     enhancedImages(),
     tailwindcss(),
     sveltekit(),
