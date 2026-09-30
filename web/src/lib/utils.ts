@@ -459,8 +459,6 @@ export const downloadUrlPost = (
   form.remove();
 };
 
-export const downloadBlob = (data: Blob, filename: string) => downloadUrl(URL.createObjectURL(data), filename);
-
 const guessMimeType = (filename: string, fallback = 'application/octet-stream') => {
   const extension = filename.split('.').pop()?.toLowerCase();
   switch (extension) {
