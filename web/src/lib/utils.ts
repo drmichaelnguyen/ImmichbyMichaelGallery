@@ -25,6 +25,8 @@ import { init, register, t } from 'svelte-i18n';
 import { derived, get } from 'svelte/store';
 import { defaultLang, locales } from '$lib/constants';
 import { authManager } from '$lib/managers/auth-manager.svelte';
+import { getFeaturedAssetMediaUrl } from '$lib/services/featured.service';
+import { publicFeaturedGallery } from '$lib/stores/featured-gallery.store';
 import {
   alwaysLoadOriginalFile,
   lang,
@@ -256,6 +258,16 @@ export const targetImageSize = (asset: AssetResponseDto, forceOriginal: boolean)
 
 export const getAssetMediaUrl = (options: AssetUrlOptions) => {
   const { id, size, cacheKey: c, edited = true, unenhanced: unenhancedOpt } = options;
+
+  if (get(publicFeaturedGallery)) {
+    return getFeaturedAssetMediaUrl({
+      id,
+      size: size ?? AssetMediaSize.Preview,
+      cacheKey: c,
+      edited,
+    });
+  }
+
   const isOriginal = size === AssetMediaSize.Original;
   const path = isOriginal ? getAssetOriginalPath(id) : getAssetThumbnailPath(id);
   const isSharedLink = !!getSharedLink();

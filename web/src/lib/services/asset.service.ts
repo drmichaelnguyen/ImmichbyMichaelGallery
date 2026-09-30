@@ -37,6 +37,8 @@ import {
   mdiPlus,
   mdiPresentationPlay,
   mdiShareVariantOutline,
+  mdiStar,
+  mdiStarOutline,
   mdiTagPlusOutline,
   mdiTune,
 } from '@mdi/js';
@@ -407,6 +409,20 @@ export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto & 
     shortcuts: [{ key: 'f' }],
   };
 
+  const Feature: ActionItem = {
+    title: $t('feature_photo'),
+    icon: mdiStarOutline,
+    $if: () => isOwner && !asset.isFeatured && !asset.isTrashed,
+    onAction: () => handleFeature(asset, true),
+  };
+
+  const Unfeature: ActionItem = {
+    title: $t('unfeature_photo'),
+    icon: mdiStar,
+    $if: () => isOwner && !!asset.isFeatured,
+    onAction: () => handleFeature(asset, false),
+  };
+
   const AddToAlbum: ActionItem = {
     title: $t('add_to_album'),
     icon: mdiPlus,
@@ -556,6 +572,8 @@ export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto & 
     Info,
     Favorite,
     Unfavorite,
+    Feature,
+    Unfeature,
     PlayMotionPhoto,
     StopMotionPhoto,
     PlaySlideshow,
@@ -836,6 +854,18 @@ const handleUnfavorite = async (asset: AssetResponseDto) => {
     eventManager.emit('AssetUpdate', response);
   } catch (error) {
     handleError(error, $t('errors.unable_to_add_remove_favorites', { values: { favorite: asset.isFavorite } }));
+  }
+};
+
+const handleFeature = async (asset: AssetResponseDto, isFeatured: boolean) => {
+  const $t = await getFormatter();
+
+  try {
+    const response = await updateAsset({ id: asset.id, updateAssetDto: { isFeatured } });
+    toastManager.primary(isFeatured ? $t('added_to_featured') : $t('removed_from_featured'));
+    eventManager.emit('AssetUpdate', response);
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_update_featured'));
   }
 };
 

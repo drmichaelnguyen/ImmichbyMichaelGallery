@@ -164,6 +164,8 @@
     <ActionButton action={Actions.Info} />
     <ActionButton action={Actions.Favorite} />
     <ActionButton action={Actions.Unfavorite} />
+    <ActionButton action={Actions.Feature} />
+    <ActionButton action={Actions.Unfeature} />
 
     {#if isOwner}
       <RatingAction {asset} {onAction} />

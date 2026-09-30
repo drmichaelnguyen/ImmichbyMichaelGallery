@@ -1,8 +1,11 @@
 import { getAssetInfo, type AssetResponseDto } from '@immich/sdk';
 import type { ZoomImageWheelState } from '@zoom-image/core';
 import { cubicOut } from 'svelte/easing';
+import { get } from 'svelte/store';
 import { authManager } from '$lib/managers/auth-manager.svelte';
 import { userPreferencesManager } from '$lib/managers/user-preferences-manager.svelte';
+import { getFeaturedAsset } from '$lib/services/featured.service';
+import { publicFeaturedGallery } from '$lib/stores/featured-gallery.store';
 import type { ImageLoaderStatus } from '$lib/utils/adaptive-image-loader.svelte';
 import { canCopyImageToClipboard } from '$lib/utils/asset-utils';
 import { BaseEventManager } from '$lib/utils/base-event-manager.svelte';
@@ -251,7 +254,9 @@ class AssetViewerManager extends BaseEventManager<Events> {
   }
 
   async setAssetId(id: string): Promise<AssetResponseDto> {
-    const asset = await getAssetInfo({ ...authManager.params, id });
+    const asset = get(publicFeaturedGallery)
+      ? await getFeaturedAsset(id)
+      : await getAssetInfo({ ...authManager.params, id });
     this.setAsset(asset);
     return asset;
   }

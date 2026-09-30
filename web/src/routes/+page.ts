@@ -22,10 +22,25 @@ export const load = (async ({ fetch }) => {
       redirect(307, Route.photos());
     }
 
-    if (serverConfigManager.value.isInitialized) {
-      // Redirect to login page if there exists an admin account (i.e. server is initialized)
-      redirect(307, Route.login());
+    if (!serverConfigManager.value.isInitialized) {
+      // First-time setup — admin still needs to register.
+      return {
+        showSetup: true,
+        meta: {
+          title: 'Welcome',
+          description: "Michael's Gallery",
+        },
+      };
     }
+
+    const $t = await getFormatter();
+    return {
+      showSetup: false,
+      meta: {
+        title: $t('featured_gallery_title'),
+        description: $t('featured_gallery_description'),
+      },
+    };
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (redirectError: any) {
@@ -35,11 +50,11 @@ export const load = (async ({ fetch }) => {
   }
 
   const $t = await getFormatter();
-
   return {
+    showSetup: false,
     meta: {
-      title: $t('welcome') + ' 🎉',
-      description: $t('immich_web_interface'),
+      title: $t('featured_gallery_title'),
+      description: $t('featured_gallery_description'),
     },
   };
 }) satisfies PageLoad;

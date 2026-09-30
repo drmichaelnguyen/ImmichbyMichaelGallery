@@ -138,6 +138,7 @@ export class AssetService extends BaseService {
     const {
       ids,
       isFavorite,
+      isFeatured,
       visibility,
       dateTimeOriginal,
       latitude,
@@ -150,7 +151,7 @@ export class AssetService extends BaseService {
     } = dto;
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
 
-    const assetDto = _.omitBy({ isFavorite, visibility, duplicateId }, _.isUndefined);
+    const assetDto = _.omitBy({ isFavorite, isFeatured, visibility, duplicateId }, _.isUndefined);
     const exifDto = _.omitBy(
       {
         latitude,

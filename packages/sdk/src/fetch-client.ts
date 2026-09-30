@@ -1079,6 +1079,8 @@ export type AssetBulkUpdateDto = {
     ids: string[];
     /** Mark as favorite */
     isFavorite?: boolean;
+    /** Mark as featured for the public gallery homepage */
+    isFeatured?: boolean;
     /** Latitude coordinate */
     latitude?: number;
     /** Longitude coordinate */
@@ -1284,6 +1286,8 @@ export type AssetResponseDto = {
     isEdited: boolean;
     /** Is favorite */
     isFavorite: boolean;
+    /** Is featured on the public gallery */
+    isFeatured?: boolean;
     /** Is offline */
     isOffline: boolean;
     /** Is trashed */
@@ -1324,6 +1328,8 @@ export type UpdateAssetDto = {
     description?: string;
     /** Mark as favorite */
     isFavorite?: boolean;
+    /** Mark as featured for the public gallery homepage */
+    isFeatured?: boolean;
     /** Latitude coordinate */
     latitude?: number;
     /** Live photo video ID */

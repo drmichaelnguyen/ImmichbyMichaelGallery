@@ -32,6 +32,7 @@ import { QueueService } from 'src/services/queue.service';
 import { SearchService } from 'src/services/search.service';
 import { ServerService } from 'src/services/server.service';
 import { SessionService } from 'src/services/session.service';
+import { FeaturedService } from 'src/services/featured.service';
 import { SharedLinkService } from 'src/services/shared-link.service';
 import { SmartInfoService } from 'src/services/smart-info.service';
 import { StackService } from 'src/services/stack.service';
@@ -67,6 +68,7 @@ export const services = [
   DatabaseService,
   DownloadService,
   DuplicateService,
+  FeaturedService,
   IntegrityService,
   HlsService,
   JobService,

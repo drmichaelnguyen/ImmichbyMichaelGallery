@@ -9,6 +9,7 @@ import z from 'zod';
 const UpdateAssetBaseSchema = z
   .object({
     isFavorite: z.boolean().optional().describe('Mark as favorite'),
+    isFeatured: z.boolean().optional().describe('Mark as featured for the public gallery homepage'),
     visibility: AssetVisibilitySchema.optional(),
     dateTimeOriginal: z.string().optional().describe('Original date and time'),
     latitude: latitudeSchema.optional().describe('Latitude coordinate'),

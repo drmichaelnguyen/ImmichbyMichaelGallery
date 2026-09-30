@@ -1277,4 +1277,41 @@ export class AssetRepository {
       .where('asset.id', '=', id)
       .executeTakeFirstOrThrow();
   }
+
+  async getFeaturedAssets() {
+    return this.db
+      .selectFrom('asset')
+      .selectAll('asset')
+      .$call(withExif)
+      .where('asset.isFeatured', '=', true)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.visibility', '!=', AssetVisibility.Locked)
+      .where('asset.visibility', '!=', AssetVisibility.Hidden)
+      .orderBy('asset.localDateTime', 'desc')
+      .execute();
+  }
+
+  async getFeaturedById(id: string) {
+    return this.db
+      .selectFrom('asset')
+      .selectAll('asset')
+      .$call(withExif)
+      .where('asset.id', '=', asUuid(id))
+      .where('asset.isFeatured', '=', true)
+      .where('asset.deletedAt', 'is', null)
+      .where('asset.visibility', '!=', AssetVisibility.Locked)
+      .where('asset.visibility', '!=', AssetVisibility.Hidden)
+      .executeTakeFirst();
+  }
+
+  async isFeaturedAsset(id: string): Promise<boolean> {
+    const row = await this.db
+      .selectFrom('asset')
+      .select('asset.id')
+      .where('asset.id', '=', asUuid(id))
+      .where('asset.isFeatured', '=', true)
+      .where('asset.deletedAt', 'is', null)
+      .executeTakeFirst();
+    return !!row;
+  }
 }
