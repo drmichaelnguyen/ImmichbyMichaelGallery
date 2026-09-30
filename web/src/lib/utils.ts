@@ -459,7 +459,11 @@ export const downloadUrlPost = (
     form.append(input);
   }
 
-  mkInput('assetIds', assetIds.join(','));
+  // Repeated fields so urlencoded parsers produce string[] (single id stays a string —
+  // the API coerces both). Avoid comma-joined values that fail Zod array validation.
+  for (const assetId of assetIds) {
+    mkInput('assetIds', assetId);
+  }
   mkInput('archiveName', archiveName);
   mkInput('edited', edited ? 'true' : 'false');
   if (downloadFormat !== 'original') {

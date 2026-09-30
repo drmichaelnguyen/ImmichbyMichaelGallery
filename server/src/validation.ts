@@ -213,6 +213,33 @@ export const stringToBool = z
   .meta({ type: 'boolean' });
 
 /**
+ * Coerce form-urlencoded / multipart asset ID lists into a UUID array.
+ * HTML forms send a single field as a string (or comma-separated), and repeated
+ * fields as a string array — JSON clients already send a real array.
+ */
+export const formUuidArray = z.preprocess((val) => {
+  if (typeof val === 'string') {
+    return val
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  if (Array.isArray(val)) {
+    return val.flatMap((item) =>
+      typeof item === 'string' && item.includes(',')
+        ? item
+            .split(',')
+            .map((part) => part.trim())
+            .filter(Boolean)
+        : item,
+    );
+  }
+
+  return val;
+}, z.array(z.uuidv4()));
+
+/**
  * Parse JSON strings from multipart/form-data
  */
 export const JsonParsed = z.transform((val, ctx) => {

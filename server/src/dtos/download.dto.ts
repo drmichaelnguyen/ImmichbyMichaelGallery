@@ -1,5 +1,6 @@
 import { createZodDto } from 'nestjs-zod';
 import z from 'zod';
+import { formUuidArray } from 'src/validation';
 
 const DownloadInfoSchema = z
   .object({
@@ -24,27 +25,29 @@ const DownloadResponseSchema = z
   })
   .meta({ id: 'DownloadResponseDto' });
 
-import { AssetIdsSchema } from 'src/dtos/asset.dto';
-
-const DownloadArchiveSchema = AssetIdsSchema.extend({
-  edited: z
-    .preprocess((val) => {
-      if (val === 'true') {
-        return true;
-      }
-      if (val === 'false') {
-        return false;
-      }
-      return val;
-    }, z.boolean())
-    .optional()
-    .describe('Download edited asset if available'),
-  archiveName: z.string().optional().describe('The name of the archive to download, without extension'),
-  downloadFormat: z
-    .enum(['original', 'jpg'])
-    .optional()
-    .describe('Archive format. "jpg" converts image assets to JPEG; non-images remain original.'),
-}).meta({ id: 'DownloadArchiveDto' });
+const DownloadArchiveSchema = z
+  .object({
+    // Accept JSON arrays and HTML form posts (string / repeated fields / CSV).
+    assetIds: formUuidArray.describe('Asset IDs'),
+    edited: z
+      .preprocess((val) => {
+        if (val === 'true') {
+          return true;
+        }
+        if (val === 'false') {
+          return false;
+        }
+        return val;
+      }, z.boolean())
+      .optional()
+      .describe('Download edited asset if available'),
+    archiveName: z.string().optional().describe('The name of the archive to download, without extension'),
+    downloadFormat: z
+      .enum(['original', 'jpg'])
+      .optional()
+      .describe('Archive format. "jpg" converts image assets to JPEG; non-images remain original.'),
+  })
+  .meta({ id: 'DownloadArchiveDto' });
 
 export class DownloadInfoDto extends createZodDto(DownloadInfoSchema) {}
 export class DownloadResponseDto extends createZodDto(DownloadResponseSchema) {}
