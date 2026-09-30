@@ -511,7 +511,7 @@ export class MediaRepository {
       .normalize()
       .modulate({ saturation: 1.28, brightness: 1.12 })
       .linear(1.08, -6);
-    pipeline = pipeline.sharpen(1.1, 1.5, 3);
+    pipeline = pipeline.sharpen({ sigma: 1.1, m1: 1.5, m2: 3 });
 
     if (options.format === ImageFormat.Jpeg) {
       await pipeline
