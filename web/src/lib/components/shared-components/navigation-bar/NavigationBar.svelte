@@ -58,25 +58,29 @@
       : 'border-b'}"
   >
     <div class="mx-4 flex flex-row items-center gap-1">
-      <IconButton
+      <Button
         id={menuButtonId}
         shape="round"
         color="secondary"
         variant="ghost"
         size="medium"
         aria-label={$t('main_menu')}
-        icon={mdiMenu}
+        aria-expanded={sidebarStore.isOpen && !mediaQueryManager.isFullSidebar}
+        aria-controls="sidebar"
+        leadingIcon={mdiMenu}
         onclick={() => {
           sidebarStore.toggle();
         }}
         onmousedown={(event: MouseEvent) => {
-          if (sidebarStore.isOpen) {
+          if (sidebarStore.isOpen && !mediaQueryManager.isFullSidebar) {
             // stops event from reaching the default handler when clicking outside of the sidebar
             event.stopPropagation();
           }
         }}
-        class="sidebar:hidden"
-      />
+        class="shrink-0 sidebar:hidden"
+      >
+        <span class="font-medium">{$t('menu')}</span>
+      </Button>
       <a data-sveltekit-preload-data="hover" href={Route.photos()}>
         <GalleryLogo variant="inline" class="max-md:h-12 max-md:text-sm" />
       </a>

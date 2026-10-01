@@ -1,9 +1,39 @@
-export type PeopleCount = '1' | '2' | 'couple';
+export type PosingCategory =
+  | '1'
+  | '2'
+  | 'couple'
+  | 'family'
+  | 'wedding'
+  | 'portrait'
+  | 'maternity'
+  | 'graduation'
+  | 'newborn'
+  | 'occasion'
+  | 'group'
+  | 'pet';
+
+/** @deprecated Prefer PosingCategory — kept for existing custom poses in localStorage. */
+export type PeopleCount = PosingCategory;
+
+export const POSING_CATEGORIES: PosingCategory[] = [
+  '1',
+  '2',
+  'couple',
+  'family',
+  'wedding',
+  'portrait',
+  'maternity',
+  'graduation',
+  'newborn',
+  'occasion',
+  'group',
+  'pet',
+];
 
 export type PoseIdea = {
   id: string;
   title: string;
-  people: PeopleCount;
+  people: PosingCategory;
   background: string[];
   object: string[];
   mood: string[];
@@ -44,7 +74,7 @@ export type PosingSeed = {
   version: number;
   note?: string;
   taxonomies: {
-    people: PeopleCount[];
+    people: PosingCategory[];
     background: string[];
     object: string[];
     mood: string[];
@@ -55,7 +85,7 @@ export type PosingSeed = {
 
 export type PoseFilters = {
   query: string;
-  people: PeopleCount | 'all';
+  people: PosingCategory | 'all';
   background: string;
   object: string;
   favoritesOnly: boolean;

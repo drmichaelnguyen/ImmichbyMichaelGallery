@@ -24,7 +24,26 @@ export const loadPosingSeed = async (): Promise<PosingSeed> => {
   if (!browser) {
     return {
       version: 1,
-      taxonomies: { people: ['1', '2', 'couple'], background: [], object: [], mood: [], poseType: [] },
+      taxonomies: {
+        people: [
+          '1',
+          '2',
+          'couple',
+          'family',
+          'wedding',
+          'portrait',
+          'maternity',
+          'graduation',
+          'newborn',
+          'occasion',
+          'group',
+          'pet',
+        ],
+        background: [],
+        object: [],
+        mood: [],
+        poseType: [],
+      },
       poses: [],
     };
   }

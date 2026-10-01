@@ -12,7 +12,8 @@
   } from '$lib/posing/posing.store';
   import { getPoseVisualRefs, mergePoseWithOverride } from '$lib/posing/refs';
   import { filterPoses, labelTag } from '$lib/posing/search';
-  import type { PeopleCount, PoseFilters, PoseIdea, PoseOverride, PosingSeed } from '$lib/posing/types';
+  import type { PoseFilters, PoseIdea, PoseOverride, PosingCategory, PosingSeed } from '$lib/posing/types';
+  import { POSING_CATEGORIES } from '$lib/posing/types';
   import { handleError } from '$lib/utils/handle-error';
   import { fileUploadHandler, openFilePicker } from '$lib/utils/file-uploader';
   import { Button, Heading, Icon, Text, toastManager } from '@immich/ui';
@@ -62,7 +63,7 @@
   let draftHowTo = $state('');
 
   let editTitle = $state('');
-  let editPeople = $state<PeopleCount>('1');
+  let editPeople = $state<PosingCategory>('1');
   let editBackground = $state('');
   let editObject = $state('');
   let editHowTo = $state('');
@@ -78,6 +79,7 @@
   const selected = $derived(allPoses.find((pose) => pose.id === selectedId) ?? null);
   const selectedMerged = $derived(selected ? mergePoseWithOverride(selected, library.overrides[selected.id]) : null);
   const selectedRefs = $derived(selected ? getPoseVisualRefs(selected, library.overrides[selected.id]) : null);
+  const categoryOptions = $derived(['all' as const, ...POSING_CATEGORIES]);
 
   onMount(() => {
     void loadPosingSeed()
@@ -89,17 +91,23 @@
       });
   });
 
-  const peopleLabel = (people: PeopleCount | 'all') => {
-    if (people === 'all') {
-      return $t('posing_people_all');
-    }
-    if (people === '1') {
-      return $t('posing_people_one');
-    }
-    if (people === '2') {
-      return $t('posing_people_two');
-    }
-    return $t('posing_people_couple');
+  const peopleLabel = (people: PosingCategory | 'all') => {
+    const labels: Record<PosingCategory | 'all', string> = {
+      all: $t('posing_people_all'),
+      '1': $t('posing_people_one'),
+      '2': $t('posing_people_two'),
+      couple: $t('posing_people_couple'),
+      family: $t('posing_people_family'),
+      wedding: $t('posing_people_wedding'),
+      portrait: $t('posing_people_portrait'),
+      maternity: $t('posing_people_maternity'),
+      graduation: $t('posing_people_graduation'),
+      newborn: $t('posing_people_newborn'),
+      occasion: $t('posing_people_occasion'),
+      group: $t('posing_people_group'),
+      pet: $t('posing_people_pet'),
+    };
+    return labels[people] ?? people;
   };
 
   const openPose = (pose: PoseIdea) => {
@@ -288,15 +296,15 @@
       </label>
 
       <div class="mb-3 flex flex-wrap gap-2">
-        {#each ['all', '1', '2', 'couple'] as peopleOption (peopleOption)}
+        {#each categoryOptions as peopleOption (peopleOption)}
           <button
             type="button"
             class="rounded-full border px-3 py-1 text-sm transition-colors {filters.people === peopleOption
               ? 'border-immich-primary bg-immich-primary/10 text-immich-primary dark:border-immich-dark-primary dark:text-immich-dark-primary'
               : 'border-gray-300 dark:border-gray-700'}"
-            onclick={() => (filters.people = peopleOption as PoseFilters['people'])}
+            onclick={() => (filters.people = peopleOption)}
           >
-            {peopleLabel(peopleOption as PoseFilters['people'])}
+            {peopleLabel(peopleOption)}
           </button>
         {/each}
         <button
@@ -468,9 +476,9 @@
           <label>
             <Text size="small" fontWeight="medium" class="mb-1">{$t('posing_people')}</Text>
             <select class="w-full rounded-xl border border-gray-300 bg-transparent px-3 py-2 text-sm dark:border-gray-700" bind:value={editPeople}>
-              <option value="1">{peopleLabel('1')}</option>
-              <option value="2">{peopleLabel('2')}</option>
-              <option value="couple">{peopleLabel('couple')}</option>
+              {#each POSING_CATEGORIES as category (category)}
+                <option value={category}>{peopleLabel(category)}</option>
+              {/each}
             </select>
           </label>
           <label>

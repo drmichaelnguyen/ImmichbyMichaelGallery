@@ -35,7 +35,13 @@ export const buildSearchPrompt = (pose: PoseIdea, override?: PoseOverride) => {
   }
 
   const parts = [
-    merged.people === 'couple' ? 'couple' : merged.people === '2' ? 'two people' : 'portrait',
+    merged.people === 'couple'
+      ? 'couple'
+      : merged.people === '2'
+        ? 'two people'
+        : merged.people === '1'
+          ? 'portrait'
+          : merged.people.replaceAll('-', ' '),
     merged.title,
     ...merged.background.slice(0, 2).map((tag) => tag.replaceAll('-', ' ')),
     ...merged.object.filter((tag) => tag !== 'none').slice(0, 2).map((tag) => tag.replaceAll('-', ' ')),
