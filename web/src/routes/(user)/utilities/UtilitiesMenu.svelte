@@ -4,6 +4,7 @@
   import { Route } from '$lib/route';
   import { Icon, modalManager, Text } from '@immich/ui';
   import {
+    mdiHumanGreeting,
     mdiCellphoneArrowDownVariant,
     mdiContentDuplicate,
     mdiCrosshairsGps,
@@ -14,6 +15,7 @@
   import { t } from 'svelte-i18n';
 
   const links = [
+    { href: Route.posingUtility(), icon: mdiHumanGreeting, label: $t('posing_library') },
     { href: Route.duplicatesUtility(), icon: mdiContentDuplicate, label: $t('review_duplicates') },
     { href: Route.largeFileUtility(), icon: mdiImageSizeSelectLarge, label: $t('review_large_files') },
     { href: Route.geolocationUtility(), icon: mdiCrosshairsGps, label: $t('manage_geolocation') },
