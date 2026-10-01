@@ -4,7 +4,7 @@
   import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { Route } from '$lib/route';
   import { handleError } from '$lib/utils/handle-error';
-  import { signUpAdmin } from '@immich/sdk';
+  import { signUp, signUpAdmin } from '@immich/sdk';
   import { Alert, Button, Field, Input, PasswordInput, Text } from '@immich/ui';
   import { t } from 'svelte-i18n';
   import type { PageData } from './$types';
@@ -14,9 +14,12 @@
   let confirmPassword = $state('');
   let name = $state('');
   let loading = $state(false);
-  let errorMessage = $derived(
+  let submittedPending = $state(false);
+  let submitError = $state('');
+  const passwordMismatch = $derived(
     password === confirmPassword || confirmPassword.length === 0 ? '' : $t('password_does_not_match'),
   );
+  const errorMessage = $derived(submitError || passwordMismatch);
   const valid = $derived(password === confirmPassword && confirmPassword.length > 0);
 
   interface Props {
@@ -33,15 +36,20 @@
     }
 
     loading = true;
-    errorMessage = '';
+    submitError = '';
 
     try {
-      await signUpAdmin({ signUpDto: { email, password, name } });
-      await serverConfigManager.loadServerConfig();
-      await goto(Route.login());
+      if (data.isInitialized) {
+        await signUp({ signUpDto: { email, password, name } });
+        submittedPending = true;
+      } else {
+        await signUpAdmin({ signUpDto: { email, password, name } });
+        await serverConfigManager.loadServerConfig();
+        await goto(Route.login());
+      }
     } catch (error) {
-      handleError(error, $t('errors.unable_to_create_admin_account'));
-      errorMessage = $t('errors.unable_to_create_admin_account');
+      handleError(error, data.isInitialized ? $t('errors.unable_to_sign_up') : $t('errors.unable_to_create_admin_account'));
+      submitError = data.isInitialized ? $t('errors.unable_to_sign_up') : $t('errors.unable_to_create_admin_account');
     } finally {
       loading = false;
     }
@@ -49,33 +57,52 @@
 </script>
 
 <AuthPageLayout title={data.meta.title}>
-  <form onsubmit={onSubmit} method="post" class="flex flex-col gap-4">
-    <Alert color="primary" class="mb-2">
-      <Text>{$t('admin.registration_description')}</Text>
+  {#if submittedPending}
+    <Alert color="primary" class="mb-4">
+      <Text>{$t('sign_up_pending_approval')}</Text>
     </Alert>
+    <Button href={Route.login()} size="giant" shape="round" fullWidth>{$t('to_login')}</Button>
+  {:else}
+    <form onsubmit={onSubmit} method="post" class="flex flex-col gap-4">
+      {#if data.isInitialized}
+        <Alert color="primary" class="mb-2">
+          <Text>{$t('sign_up_approval_description')}</Text>
+        </Alert>
+      {:else}
+        <Alert color="primary" class="mb-2">
+          <Text>{$t('admin.registration_description')}</Text>
+        </Alert>
+      {/if}
 
-    <Field label={$t('admin_email')} required>
-      <Input bind:value={email} type="email" autocomplete="email" />
-    </Field>
+      <Field label={data.isInitialized ? $t('email') : $t('admin_email')} required>
+        <Input bind:value={email} type="email" autocomplete="email" />
+      </Field>
 
-    <Field label={$t('admin_password')} required>
-      <PasswordInput bind:value={password} autocomplete="new-password" />
-    </Field>
+      <Field label={data.isInitialized ? $t('password') : $t('admin_password')} required>
+        <PasswordInput bind:value={password} autocomplete="new-password" />
+      </Field>
 
-    <Field label={$t('confirm_admin_password')} required>
-      <PasswordInput bind:value={confirmPassword} autocomplete="new-password" />
-    </Field>
+      <Field label={data.isInitialized ? $t('confirm_password') : $t('confirm_admin_password')} required>
+        <PasswordInput bind:value={confirmPassword} autocomplete="new-password" />
+      </Field>
 
-    <Field label={$t('name')} required>
-      <Input bind:value={name} type="text" autocomplete="name" />
-    </Field>
+      <Field label={$t('name')} required>
+        <Input bind:value={name} type="text" autocomplete="name" />
+      </Field>
 
-    {#if errorMessage}
-      <Alert color="danger" title={errorMessage} size="medium" class="mt-4" />
-    {/if}
+      {#if errorMessage}
+        <Alert color="danger" title={errorMessage} size="medium" class="mt-4" />
+      {/if}
 
-    <Button class="mt-4" type="submit" size="giant" shape="round" fullWidth disabled={!valid || loading} {loading}
-      >{$t('sign_up')}</Button
-    >
-  </form>
+      <Button class="mt-4" type="submit" size="giant" shape="round" fullWidth disabled={!valid || loading} {loading}
+        >{$t('sign_up')}</Button
+      >
+
+      {#if data.isInitialized}
+        <Button href={Route.login()} color="secondary" variant="ghost" size="small" shape="round" fullWidth>
+          {$t('already_have_an_account')}
+        </Button>
+      {/if}
+    </form>
+  {/if}
 </AuthPageLayout>

@@ -406,6 +406,7 @@ export const UserAvatarColorSchema = z
 
 export enum UserStatus {
   Active = 'active',
+  PendingApproval = 'pending_approval',
   Removing = 'removing',
   Deleted = 'deleted',
 }

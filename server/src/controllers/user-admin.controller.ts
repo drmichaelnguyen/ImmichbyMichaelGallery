@@ -194,4 +194,16 @@ export class UserAdminController {
   restoreUserAdmin(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<UserAdminResponseDto> {
     return this.service.restore(auth, id);
   }
+
+  @Post(':id/approve')
+  @Authenticated({ permission: Permission.AdminUserUpdate, admin: true })
+  @HttpCode(HttpStatus.OK)
+  @Endpoint({
+    summary: 'Approve a pending user',
+    description: 'Approve a self-registered user so they can log in and access the library.',
+    history: new HistoryBuilder().added('v3.2.2'),
+  })
+  approveUserAdmin(@Auth() auth: AuthDto, @Param() { id }: UUIDParamDto): Promise<UserAdminResponseDto> {
+    return this.service.approve(auth, id);
+  }
 }

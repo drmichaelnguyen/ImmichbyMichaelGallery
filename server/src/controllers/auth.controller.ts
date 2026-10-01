@@ -61,6 +61,18 @@ export class AuthController {
     return this.service.adminSignUp(dto);
   }
 
+  @Post('sign-up')
+  @Endpoint({
+    summary: 'Register user',
+    description:
+      'Create a non-admin account that stays pending until an administrator approves it. Pending users cannot log in.',
+    history: new HistoryBuilder().added('v3.2.2'),
+  })
+  @Authenticated({ public: true })
+  signUp(@Body() dto: SignUpDto): Promise<UserAdminResponseDto> {
+    return this.service.signUp(dto);
+  }
+
   @Post('validateToken')
   @Endpoint({
     summary: 'Validate access token',

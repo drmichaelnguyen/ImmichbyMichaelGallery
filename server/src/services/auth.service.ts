@@ -21,7 +21,7 @@ import {
   mapLoginResponse,
 } from 'src/dtos/auth.dto';
 import { UserAdminResponseDto, mapUserAdmin } from 'src/dtos/user.dto';
-import { AuthType, ImmichCookie, ImmichHeader, ImmichQuery, JobName, Permission } from 'src/enum';
+import { AuthType, ImmichCookie, ImmichHeader, ImmichQuery, JobName, Permission, UserStatus } from 'src/enum';
 import { OAuthProfile } from 'src/repositories/oauth.repository';
 import { BaseService } from 'src/services/base.service';
 import { isGranted } from 'src/utils/access';
@@ -69,6 +69,16 @@ export class AuthService extends BaseService {
 
     if (!user || !user.password || !isAuthenticated) {
       this.logger.warn(`Failed login attempt for user ${dto.email} from ip address ${details.clientIp}`);
+      throw new UnauthorizedException('Incorrect email or password');
+    }
+
+    if (user.status === UserStatus.PendingApproval) {
+      this.logger.warn(`Blocked login for pending user ${dto.email} from ip address ${details.clientIp}`);
+      throw new UnauthorizedException('Account is pending admin approval');
+    }
+
+    if (user.status !== UserStatus.Active) {
+      this.logger.warn(`Blocked login for inactive user ${dto.email} (${user.status}) from ip address ${details.clientIp}`);
       throw new UnauthorizedException('Incorrect email or password');
     }
 
@@ -206,9 +216,33 @@ export class AuthService extends BaseService {
       name: dto.name,
       password: dto.password,
       storageLabel: 'admin',
+      status: UserStatus.Active,
     });
 
     return mapUserAdmin(admin);
+  }
+
+  async signUp(dto: SignUpDto): Promise<UserAdminResponseDto> {
+    const config = await this.getConfig({ withCache: false });
+    if (!config.passwordLogin.enabled) {
+      throw new BadRequestException('Password login has been disabled');
+    }
+
+    const admin = await this.userRepository.getAdmin();
+    if (!admin) {
+      throw new BadRequestException('Admin registration is required before public sign-up');
+    }
+
+    const user = await this.createUser({
+      isAdmin: false,
+      email: dto.email,
+      name: dto.name,
+      password: dto.password,
+      shouldChangePassword: false,
+      status: UserStatus.PendingApproval,
+    });
+
+    return mapUserAdmin(user);
   }
 
   async authenticate({ headers, queryParams, metadata }: ValidateRequest): Promise<AuthDto> {

@@ -1,4 +1,5 @@
 import {
+  approveUserAdmin,
   createUserAdmin,
   deleteUserAdmin,
   restoreUserAdmin,
@@ -11,6 +12,7 @@ import {
 } from '@immich/sdk';
 import { modalManager, toastManager, type ActionItem } from '@immich/ui';
 import {
+  mdiAccountCheckOutline,
   mdiDeleteRestore,
   mdiInformationOutline,
   mdiLockReset,
@@ -81,6 +83,14 @@ export const getUserAdminActions = ($t: MessageFormatter, user: UserAdminRespons
     onAction: () => modalManager.show(UserRestoreConfirmModal, { user }),
   };
 
+  const Approve: ActionItem = {
+    icon: mdiAccountCheckOutline,
+    title: $t('approve_user'),
+    color: 'primary',
+    $if: () => !user.deletedAt && user.status === UserStatus.PendingApproval,
+    onAction: () => handleApproveUserAdmin(user),
+  };
+
   const ResetPassword: ActionItem = {
     icon: mdiLockReset,
     title: $t('reset_password'),
@@ -94,7 +104,7 @@ export const getUserAdminActions = ($t: MessageFormatter, user: UserAdminRespons
     onAction: () => handleResetPinCodeUserAdmin(user),
   };
 
-  return { Detail, Update, Delete, Restore, ResetPassword, ResetPinCode };
+  return { Detail, Update, Delete, Restore, Approve, ResetPassword, ResetPinCode };
 };
 
 export const handleCreateUserAdmin = async (dto: UserAdminCreateDto) => {
@@ -147,6 +157,25 @@ export const handleRestoreUserAdmin = async (user: UserAdminResponseDto) => {
     return true;
   } catch (error) {
     handleError(error, $t('errors.unable_to_restore_user'));
+    return false;
+  }
+};
+
+export const handleApproveUserAdmin = async (user: UserAdminResponseDto) => {
+  const $t = await getFormatter();
+  const prompt = $t('admin.confirm_user_approval', { values: { user: user.name } });
+  const success = await modalManager.showDialog({ prompt });
+  if (!success) {
+    return false;
+  }
+
+  try {
+    const response = await approveUserAdmin({ id: user.id });
+    eventManager.emit('UserAdminUpdate', response);
+    toastManager.primary($t('admin.user_approved'));
+    return true;
+  } catch (error) {
+    handleError(error, $t('errors.unable_to_approve_user'));
     return false;
   }
 };

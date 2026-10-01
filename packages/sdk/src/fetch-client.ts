@@ -4289,6 +4289,20 @@ export function restoreUserAdmin({ id }: {
     }));
 }
 /**
+ * Approve a pending user
+ */
+export function approveUserAdmin({ id }: {
+    id: string;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 200;
+        data: UserAdminResponseDto;
+    }>(`/admin/users/${encodeURIComponent(id)}/approve`, {
+        ...opts,
+        method: "POST"
+    }));
+}
+/**
  * Retrieve user sessions
  */
 export function getUserSessionsAdmin({ id }: {
@@ -5133,6 +5147,21 @@ export function signUpAdmin({ signUpDto }: {
         status: 201;
         data: UserAdminResponseDto;
     }>("/auth/admin-sign-up", oazapfts.json({
+        ...opts,
+        method: "POST",
+        body: signUpDto
+    })));
+}
+/**
+ * Register user (pending admin approval)
+ */
+export function signUp({ signUpDto }: {
+    signUpDto: SignUpDto;
+}, opts?: Oazapfts.RequestOpts) {
+    return oazapfts.ok(oazapfts.fetchJson<{
+        status: 201;
+        data: UserAdminResponseDto;
+    }>("/auth/sign-up", oazapfts.json({
         ...opts,
         method: "POST",
         body: signUpDto
@@ -8043,6 +8072,7 @@ export enum NotificationType {
 }
 export enum UserStatus {
     Active = "active",
+    PendingApproval = "pending_approval",
     Removing = "removing",
     Deleted = "deleted"
 }

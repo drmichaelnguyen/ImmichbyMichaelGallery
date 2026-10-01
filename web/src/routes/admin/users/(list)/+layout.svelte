@@ -5,7 +5,7 @@
   import { getUserAdminActions, getUserAdminsActions } from '$lib/services/user-admin.service';
   import { locale } from '$lib/stores/preferences.store';
   import { getByteUnitString } from '$lib/utils/byte-units';
-  import { searchUsersAdmin, type UserAdminResponseDto } from '@immich/sdk';
+  import { searchUsersAdmin, UserStatus, type UserAdminResponseDto } from '@immich/sdk';
   import {
     CommandPaletteDefaultProvider,
     Container,
@@ -19,6 +19,7 @@
     TableHeader,
     TableHeading,
     TableRow,
+    Text,
   } from '@immich/ui';
   import { mdiInfinity } from '@mdi/js';
   import type { Snippet } from 'svelte';
@@ -50,8 +51,21 @@
   const { Create } = $derived(getUserAdminsActions($t));
 
   const getActionsForUser = (user: UserAdminResponseDto) => {
-    const { Detail, Update, Delete, ResetPassword, ResetPinCode } = getUserAdminActions($t, user);
-    return [Detail, Update, ResetPassword, ResetPinCode, MenuItemType.Divider, Delete];
+    const { Detail, Update, Delete, Approve, ResetPassword, ResetPinCode } = getUserAdminActions($t, user);
+    return [Detail, Update, Approve, ResetPassword, ResetPinCode, MenuItemType.Divider, Delete];
+  };
+
+  const statusLabel = (user: UserAdminResponseDto) => {
+    if (user.deletedAt) {
+      return $t('user_deleted');
+    }
+    if (user.status === UserStatus.PendingApproval) {
+      return $t('pending_approval');
+    }
+    if (user.isAdmin) {
+      return $t('admin.admin_user');
+    }
+    return $t('active');
   };
 
   const classes = {
@@ -78,24 +92,31 @@
       <TableHeader>
         <TableHeading class={classes.column1}>{$t('name')}</TableHeading>
         <TableHeading class={classes.column2}>{$t('email')}</TableHeading>
-        <TableHeading class={classes.column3}>{$t('has_quota')}</TableHeading>
+        <TableHeading class={classes.column3}>{$t('status')}</TableHeading>
       </TableHeader>
 
       <TableBody>
         {#each users as user (user.id)}
-          <TableRow color={user.deletedAt ? 'danger' : undefined}>
+          <TableRow
+            color={user.deletedAt ? 'danger' : user.status === UserStatus.PendingApproval ? 'warning' : undefined}
+          >
             <TableCell class={classes.column1}>
               <Link href={Route.viewUser(user)}>{user.name}</Link>
+              {#if user.quotaSizeInBytes !== null && user.quotaSizeInBytes >= 0}
+                <Text size="tiny" color="muted" class="ms-2">{getByteUnitString(user.quotaSizeInBytes, $locale)}</Text>
+              {:else}
+                <Icon icon={mdiInfinity} size="14" class="ms-2 inline text-gray-400" />
+              {/if}
             </TableCell>
             <TableCell class={classes.column2}>{user.email}</TableCell>
             <TableCell class={classes.column3}>
-              <div class="container mx-auto flex flex-wrap justify-center">
-                {#if user.quotaSizeInBytes !== null && user.quotaSizeInBytes >= 0}
-                  {getByteUnitString(user.quotaSizeInBytes, $locale)}
-                {:else}
-                  <Icon icon={mdiInfinity} size="16" />
-                {/if}
-              </div>
+              <span
+                class="rounded-full px-2 py-0.5 text-xs {user.status === UserStatus.PendingApproval
+                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200'
+                  : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200'}"
+              >
+                {statusLabel(user)}
+              </span>
             </TableCell>
             <TableCell class={classes.column4}>
               <ContextMenuButton color="primary" aria-label={$t('open')} items={getActionsForUser(user)} />

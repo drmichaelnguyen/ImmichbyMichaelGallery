@@ -150,6 +150,12 @@
         </Field>
 
         <Button type="submit" size="large" shape="round" fullWidth {loading} class="mt-6">{$t('to_login')}</Button>
+
+        {#if serverConfig.isInitialized}
+          <Button href={Route.register()} color="secondary" variant="ghost" size="small" shape="round" fullWidth>
+            {$t('sign_up')}
+          </Button>
+        {/if}
       </form>
     {/if}
 

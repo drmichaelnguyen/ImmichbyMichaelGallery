@@ -4,6 +4,8 @@
   import ControlAppBar from '$lib/components/shared-components/ControlAppBar.svelte';
   import { assetMultiSelectManager } from '$lib/managers/asset-multi-select-manager.svelte';
   import type { Viewport } from '$lib/managers/timeline-manager/types';
+  import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
+  import { serverConfigManager } from '$lib/managers/server-config-manager.svelte';
   import { Route } from '$lib/route';
   import { getFeaturedAssets } from '$lib/services/featured.service';
   import { publicFeaturedGallery } from '$lib/stores/featured-gallery.store';
@@ -12,6 +14,8 @@
   import { Button, Heading, Text } from '@immich/ui';
   import { onDestroy, onMount } from 'svelte';
   import { t } from 'svelte-i18n';
+
+  const showSignUp = $derived(serverConfigManager.value.isInitialized && featureFlagsManager.value.passwordLogin);
 
   let assets = $state<AssetResponseDto[]>([]);
   let loading = $state(true);
@@ -46,9 +50,11 @@
         <Button href={Route.login()} size="small" shape="round" variant="ghost" color="secondary">
           {$t('login')}
         </Button>
-        <Button href={Route.register()} size="small" shape="round" color="primary">
-          {$t('sign_up')}
-        </Button>
+        {#if showSignUp}
+          <Button href={Route.register()} size="small" shape="round" color="primary">
+            {$t('sign_up')}
+          </Button>
+        {/if}
       </div>
     {/snippet}
   </ControlAppBar>
