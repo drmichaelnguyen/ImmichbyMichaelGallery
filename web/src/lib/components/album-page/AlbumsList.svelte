@@ -18,6 +18,7 @@
     type AlbumViewSettings,
   } from '$lib/stores/preferences.store';
   import { getSelectedAlbumGroupOption, sortAlbums, stringToSortOrder, type AlbumGroup } from '$lib/utils/album-utils';
+  import { allows } from '$lib/utils/privileges';
   import type { ContextMenuPosition } from '$lib/utils/context-menu';
   import { normalizeSearchString } from '$lib/utils/string-utils';
   import { AlbumUserRole, type AlbumResponseDto, type SharedLinkResponseDto } from '@immich/sdk';
@@ -35,6 +36,8 @@
     allowEdit?: boolean;
     showOwner?: boolean;
     albumGroupIds?: string[];
+    selectedAlbumIds?: string[];
+    onToggleAlbum?: ((album: AlbumResponseDto) => void) | undefined;
     empty?: Snippet;
   }
 
@@ -47,6 +50,8 @@
     showOwner = false,
     // eslint-disable-next-line no-useless-assignment
     albumGroupIds = $bindable([]),
+    selectedAlbumIds = [],
+    onToggleAlbum = undefined,
     empty,
   }: Props = $props();
 
@@ -265,6 +270,8 @@
         {showOwner}
         showDateRange
         showItemCount
+        {selectedAlbumIds}
+        {onToggleAlbum}
         onShowContextMenu={showAlbumContextMenu}
       />
     {:else}
@@ -275,13 +282,21 @@
           {showOwner}
           showDateRange
           showItemCount
+          {selectedAlbumIds}
+          {onToggleAlbum}
           onShowContextMenu={showAlbumContextMenu}
         />
       {/each}
     {/if}
   {:else if userSettings.view === AlbumViewMode.List}
     <!-- Album Table -->
-    <AlbumsTable {groupedAlbums} {albumGroupOption} onShowContextMenu={showAlbumContextMenu} />
+    <AlbumsTable
+      {groupedAlbums}
+      {albumGroupOption}
+      {selectedAlbumIds}
+      {onToggleAlbum}
+      onShowContextMenu={showAlbumContextMenu}
+    />
   {/if}
 {:else}
   <!-- Empty Message -->
@@ -294,8 +309,10 @@
     <MenuOption icon={mdiRenameOutline} text={$t('edit_album')} onClick={() => handleSelect('edit')} />
     <MenuOption icon={mdiShareVariantOutline} text={$t('share')} onClick={() => handleSelect('share')} />
   {/if}
-  <MenuOption icon={mdiDownload} text={$t('download')} onClick={() => handleSelect('download')} />
-  {#if showFullContextMenu}
+  {#if allows('download')}
+    <MenuOption icon={mdiDownload} text={$t('download')} onClick={() => handleSelect('download')} />
+  {/if}
+  {#if showFullContextMenu && allows('delete')}
     <MenuOption icon={mdiDeleteOutline} text={$t('delete')} onClick={() => handleSelect('delete')} />
   {/if}
 </RightClickContextMenu>

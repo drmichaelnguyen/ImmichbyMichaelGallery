@@ -553,6 +553,18 @@ export type UserLicense = {
     /** License key (format: /^IM(SV|CL)(-[\dA-Za-z]{4}){8}$/) */
     licenseKey: string;
 };
+export type GalleryPrivilegesDto = {
+    /** Can delete photos and videos */
+    delete: boolean;
+    /** Can download photos and videos */
+    download: boolean;
+    /** Can edit photos and their details */
+    edit: boolean;
+    /** Can upload photos and videos */
+    upload: boolean;
+    /** Can open the featured gallery while signed in */
+    viewFeatured: boolean;
+};
 export type UserAdminResponseDto = {
     avatarColor: UserAvatarColor;
     /** Cluster group the user is a member of */
@@ -578,6 +590,8 @@ export type UserAdminResponseDto = {
     profileImagePath: string;
     /** Storage quota in bytes */
     quotaSizeInBytes: number | null;
+    /** Gallery privileges */
+    privileges: GalleryPrivilegesDto;
     /** Storage usage in bytes */
     quotaUsageInBytes: number | null;
     /** Require password change on next login */
@@ -600,6 +614,8 @@ export type UserAdminCreateDto = {
     notify?: boolean;
     /** User password */
     password: string;
+    /** Gallery privileges */
+    privileges?: GalleryPrivilegesDto;
     /** PIN code */
     pinCode?: string | null;
     /** Storage quota in bytes */
@@ -625,6 +641,8 @@ export type UserAdminUpdateDto = {
     password?: string;
     /** PIN code */
     pinCode?: string | null;
+    /** Gallery privileges */
+    privileges?: GalleryPrivilegesDto;
     /** Storage quota in bytes */
     quotaSizeInBytes?: number | null;
     /** Require password change on next login */

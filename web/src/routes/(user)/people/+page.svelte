@@ -18,7 +18,8 @@
   import { handleError } from '$lib/utils/handle-error';
   import { clearQueryParam } from '$lib/utils/navigation';
   import { getAllPeople, getPerson, searchPerson, updatePerson, type PersonResponseDto } from '@immich/sdk';
-  import { Button, Icon, modalManager, toastManager } from '@immich/ui';
+  import CreateSharedAlbumModal from '$lib/modals/CreateSharedAlbumModal.svelte';
+  import { Button, Icon, modalManager, Text, toastManager } from '@immich/ui';
   import { mdiAccountOff, mdiEyeOutline } from '@mdi/js';
   import { onMount } from 'svelte';
   import { t } from 'svelte-i18n';
@@ -41,6 +42,8 @@
   let searchedPeopleLocal: PersonResponseDto[] = $state([]);
   let innerHeight = $state(0);
   let searchPeopleElement = $state<ReturnType<typeof SearchPeople>>();
+  let selecting = $state(false);
+  let selectedPersonIds = $state<string[]>([]);
 
   onMount(() => {
     const getSearchedPeople = $page.url.searchParams.get(QueryParameter.SEARCHED_PEOPLE);
@@ -276,6 +279,23 @@
     );
   };
 
+  const togglePerson = (person: PersonResponseDto) => {
+    selectedPersonIds = selectedPersonIds.includes(person.id)
+      ? selectedPersonIds.filter((id) => id !== person.id)
+      : [...selectedPersonIds, person.id];
+  };
+
+  const createSharedAlbum = async () => {
+    const created = await modalManager.show(CreateSharedAlbumModal, { personIds: selectedPersonIds });
+    if (!created) {
+      return;
+    }
+
+    selecting = false;
+    selectedPersonIds = [];
+    await goto(Route.viewAlbum(created.album));
+  };
+
   const onPersonUpdate = (response: PersonResponseDto) => {
     people = people.map((person: PersonResponseDto) => {
       if (person.id === response.id) {
@@ -328,6 +348,19 @@
           </div>
         </div>
         <Button
+          size="small"
+          variant="ghost"
+          color="secondary"
+          onclick={() => {
+            selecting = !selecting;
+            if (!selecting) {
+              selectedPersonIds = [];
+            }
+          }}
+        >
+          {selecting ? $t('done_selecting') : $t('select_to_share')}
+        </Button>
+        <Button
           leadingIcon={mdiEyeOutline}
           onclick={() => goto('/people/manage')}
           size="small"
@@ -338,6 +371,18 @@
     {/if}
   {/snippet}
 
+  {#if selecting}
+    <div class="mb-4 flex flex-wrap items-center gap-3">
+      <Text>{$t('selected')} ({selectedPersonIds.length})</Text>
+      <Button size="small" disabled={selectedPersonIds.length < 2} onclick={createSharedAlbum}>
+        {$t('create_shared_album')}
+      </Button>
+      {#if selectedPersonIds.length < 2}
+        <Text size="small" color="muted">{$t('select_at_least_two')}</Text>
+      {/if}
+    </div>
+  {/if}
+
   {#if countVisiblePeople > 0 && (!searchName || searchedPeopleLocal.length > 0)}
     <PeopleInfiniteScroll people={showPeople} hasNextPage={!!nextPage && !searchName} {loadNextPage}>
       {#snippet children({ person })}
@@ -346,6 +391,8 @@
         >
           <PeopleCard
             {person}
+            selected={selectedPersonIds.includes(person.id)}
+            onSelect={selecting ? () => togglePerson(person) : undefined}
             onMergePeople={() => handleMergePeople(person)}
             onHidePerson={() => handleHidePerson(person)}
             onToggleFavorite={() => handleToggleFavorite(person)}

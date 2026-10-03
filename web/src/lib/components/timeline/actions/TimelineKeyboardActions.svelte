@@ -15,6 +15,7 @@
   import NavigateToDateModal from '$lib/modals/NavigateToDateModal.svelte';
   import ShortcutsModal from '$lib/modals/ShortcutsModal.svelte';
   import { Route } from '$lib/route';
+  import { allows } from '$lib/utils/privileges';
   import { keyboardManager } from '$lib/stores/keyboard-manager.svelte';
   import { showDeleteModal } from '$lib/stores/preferences.store';
   import { searchStore } from '$lib/stores/search.svelte';
@@ -34,6 +35,9 @@
   let { timelineManager = $bindable(), assetInteraction, onEscape, scrollToAsset }: Props = $props();
 
   const trashOrDelete = async (forceRequested?: boolean) => {
+    if (!allows('delete')) {
+      return;
+    }
     const force = forceRequested || !featureFlagsManager.value.trash;
     const selectedAssets = assetInteraction.assets;
 

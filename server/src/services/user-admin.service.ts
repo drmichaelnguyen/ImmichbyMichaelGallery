@@ -31,7 +31,7 @@ export class UserAdminService extends BaseService {
   }
 
   async create(dto: UserAdminCreateDto): Promise<UserAdminResponseDto> {
-    const { notify, ...userDto } = dto;
+    const { notify, privileges, ...userDto } = dto;
     const config = await this.getConfig({ withCache: false });
     if (!config.oauth.enabled && !userDto.password) {
       throw new BadRequestException('password is required');
@@ -39,11 +39,22 @@ export class UserAdminService extends BaseService {
 
     const user = await this.createUser(userDto);
 
+    if (privileges) {
+      await this.userRepository.upsertMetadata(user.id, {
+        key: UserMetadataKey.Privileges,
+        value: privileges,
+      });
+    }
+
     await this.eventRepository.emit('UserSignup', {
       notify: !!notify,
       id: user.id,
       password: userDto.password,
     });
+
+    if (privileges) {
+      return mapUserAdmin(await this.findOrFail(user.id, {}));
+    }
 
     return mapUserAdmin(user);
   }
@@ -54,6 +65,7 @@ export class UserAdminService extends BaseService {
   }
 
   async update(auth: AuthDto, id: string, dto: UserAdminUpdateDto): Promise<UserAdminResponseDto> {
+    const { privileges, ...userDto } = dto;
     const user = await this.findOrFail(id, {});
 
     if (dto.isAdmin !== undefined && dto.isAdmin !== auth.user.isAdmin && auth.user.id === id) {
@@ -79,19 +91,33 @@ export class UserAdminService extends BaseService {
       }
     }
 
-    if (dto.password) {
-      dto.password = await this.cryptoRepository.hashBcrypt(dto.password, SALT_ROUNDS);
+    if (userDto.password) {
+      userDto.password = await this.cryptoRepository.hashBcrypt(userDto.password, SALT_ROUNDS);
     }
 
-    if (dto.pinCode) {
-      dto.pinCode = await this.cryptoRepository.hashBcrypt(dto.pinCode, SALT_ROUNDS);
+    if (userDto.pinCode) {
+      userDto.pinCode = await this.cryptoRepository.hashBcrypt(userDto.pinCode, SALT_ROUNDS);
     }
 
-    if (dto.storageLabel === '') {
-      dto.storageLabel = null;
+    if (userDto.storageLabel === '') {
+      userDto.storageLabel = null;
     }
 
-    const updatedUser = await this.userRepository.update(id, { ...dto, updatedAt: new Date() });
+    for (const [key, value] of Object.entries(userDto)) {
+      if (value === undefined) {
+        delete userDto[key as keyof typeof userDto];
+      }
+    }
+
+    const updatedUser = await this.userRepository.update(id, { ...userDto, updatedAt: new Date() });
+
+    if (privileges) {
+      await this.userRepository.upsertMetadata(id, {
+        key: UserMetadataKey.Privileges,
+        value: privileges,
+      });
+      return mapUserAdmin(await this.findOrFail(id, {}));
+    }
 
     return mapUserAdmin(updatedUser);
   }

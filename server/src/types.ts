@@ -605,10 +605,19 @@ export type UserMetadataItem<T extends keyof UserMetadata = UserMetadataKey> = {
   value: UserMetadata[T];
 };
 
+export type GalleryPrivileges = {
+  viewFeatured: boolean;
+  download: boolean;
+  upload: boolean;
+  edit: boolean;
+  delete: boolean;
+};
+
 export interface UserMetadata extends Record<UserMetadataKey, Record<string, any>> {
   [UserMetadataKey.Preferences]: DeepPartial<UserPreferences>;
   [UserMetadataKey.License]: { licenseKey: string; activationKey: string; activatedAt: string };
   [UserMetadataKey.Onboarding]: { isOnboarded: boolean };
+  [UserMetadataKey.Privileges]: GalleryPrivileges;
 }
 
 export type MaybeDehydrated<T> = T | ShallowDehydrateObject<T>;

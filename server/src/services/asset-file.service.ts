@@ -22,6 +22,7 @@ export class AssetFileService extends BaseService {
   }
 
   async download(auth: AuthDto, id: string) {
+    await this.requirePrivilege(auth, 'download');
     await this.requireAccess({ auth, permission: Permission.AssetFileDownload, ids: [id] });
     const file = await findOrFail(() => this.assetFileRepository.get(id), 'Asset file');
 
@@ -34,6 +35,7 @@ export class AssetFileService extends BaseService {
   }
 
   async delete(auth: AuthDto, id: string) {
+    await this.requirePrivilege(auth, 'delete');
     await this.requireAccess({ auth, permission: Permission.AssetFileDelete, ids: [id] });
 
     const file = await findOrFail(() => this.assetFileRepository.get(id), 'Asset file');

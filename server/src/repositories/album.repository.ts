@@ -455,6 +455,23 @@ export class AlbumRepository {
       .execute();
   }
 
+  async getAssetIdsByAlbumIds(albumIds: string[]): Promise<string[]> {
+    if (albumIds.length === 0) {
+      return [];
+    }
+
+    const rows = await this.db
+      .selectFrom('album_asset')
+      .innerJoin('asset', 'asset.id', 'album_asset.assetId')
+      .select('asset.id')
+      .distinct()
+      .where('album_asset.albumId', 'in', albumIds)
+      .where('asset.deletedAt', 'is', null)
+      .execute();
+
+    return rows.map(({ id }) => id);
+  }
+
   @GenerateSql({ params: [{ sourceAssetId: DummyValue.UUID, targetAssetId: DummyValue.UUID }] })
   async copyAlbums({ sourceAssetId, targetAssetId }: { sourceAssetId: string; targetAssetId: string }) {
     return this.db

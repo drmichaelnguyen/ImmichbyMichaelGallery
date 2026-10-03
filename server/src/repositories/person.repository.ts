@@ -772,6 +772,41 @@ export class PersonRepository {
       .executeTakeFirst();
   }
 
+  async listOwnedPersonGroupIds(ownerId: string, personGroupIds: string[]): Promise<string[]> {
+    if (personGroupIds.length === 0) {
+      return [];
+    }
+
+    const rows = await this.db
+      .selectFrom('person')
+      .select('person.personGroupId')
+      .where('person.ownerId', '=', ownerId)
+      .where('person.personGroupId', 'in', personGroupIds)
+      .execute();
+
+    return rows.map(({ personGroupId }) => personGroupId);
+  }
+
+  async getAssetIdsForPersonGroups(ownerId: string, personGroupIds: string[]): Promise<string[]> {
+    if (personGroupIds.length === 0) {
+      return [];
+    }
+
+    const rows = await this.db
+      .selectFrom('asset_face')
+      .innerJoin('asset', 'asset.id', 'asset_face.assetId')
+      .select('asset.id')
+      .distinct()
+      .where('asset_face.personGroupId', 'in', personGroupIds)
+      .where('asset_face.deletedAt', 'is', null)
+      .where('asset_face.isVisible', '=', true)
+      .where('asset.ownerId', '=', ownerId)
+      .where('asset.deletedAt', 'is', null)
+      .execute();
+
+    return rows.map(({ id }) => id);
+  }
+
   @GenerateSql({ params: [[DummyValue.UUID]] })
   getForMergePerson(personGroupIds: string[]) {
     return this.db

@@ -5,6 +5,7 @@
   import AssetDeleteConfirmModal from '$lib/modals/AssetDeleteConfirmModal.svelte';
   import { showDeleteModal } from '$lib/stores/preferences.store';
   import { type OnDelete, type OnUndoDelete, deleteAssets } from '$lib/utils/actions';
+  import { allows } from '$lib/utils/privileges';
   import { IconButton, modalManager } from '@immich/ui';
   import { mdiDeleteForeverOutline, mdiDeleteOutline, mdiTimerSand } from '@mdi/js';
   import { t } from 'svelte-i18n';
@@ -19,10 +20,14 @@
   let { onAssetDelete, onUndoDelete = undefined, menuItem = false, force: forceRequested }: Props = $props();
 
   const force = $derived(forceRequested || !featureFlagsManager.value.trash);
+  const canDelete = $derived(allows('delete'));
   let label = $derived(force ? $t('permanently_delete') : $t('delete'));
   let loading = $state(false);
 
   const onAction = async () => {
+    if (!canDelete) {
+      return;
+    }
     const assets = assetMultiSelectManager.ownedAssets;
 
     if (force && $showDeleteModal) {
@@ -39,6 +44,7 @@
   };
 </script>
 
+{#if canDelete}
 {#if menuItem}
   <MenuOption text={label} icon={mdiDeleteOutline} onClick={onAction} />
 {:else if loading}
@@ -59,4 +65,5 @@
     icon={mdiDeleteForeverOutline}
     onclick={onAction}
   />
+{/if}
 {/if}

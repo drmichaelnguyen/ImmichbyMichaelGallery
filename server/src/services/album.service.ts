@@ -1,11 +1,13 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import {
   AddUsersDto,
+  AlbumFromSelectionResponseDto,
   AlbumResponseDto,
   AlbumsAddAssetsDto,
   AlbumsAddAssetsResponseDto,
   AlbumStatisticsResponseDto,
   CreateAlbumDto,
+  CreateAlbumFromSelectionDto,
   GetAlbumsDto,
   mapAlbum,
   UpdateAlbumDto,
@@ -14,7 +16,8 @@ import {
 import { BulkIdErrorReason, BulkIdResponseDto, BulkIdsDto } from 'src/dtos/asset-ids.response.dto';
 import { AuthDto } from 'src/dtos/auth.dto';
 import { MapMarkerResponseDto } from 'src/dtos/map.dto';
-import { AlbumUserRole, Permission } from 'src/enum';
+import { mapSharedLink } from 'src/dtos/shared-link.dto';
+import { AlbumUserRole, Permission, SharedLinkType } from 'src/enum';
 import { AlbumAssetCount, AlbumInfoOptions } from 'src/repositories/album.repository';
 import { BaseService } from 'src/services/base.service';
 import { addAssets, removeAssets } from 'src/utils/asset.util';
@@ -135,6 +138,82 @@ export class AlbumService extends BaseService {
     }
 
     return mapAlbum(album);
+  }
+
+  async createFromSelection(auth: AuthDto, dto: CreateAlbumFromSelectionDto): Promise<AlbumFromSelectionResponseDto> {
+    const albumIds = dto.albumIds ?? [];
+    const personIds = dto.personIds ?? [];
+    if ((albumIds.length === 0 && personIds.length === 0) || (albumIds.length > 0 && personIds.length > 0)) {
+      throw new BadRequestException('Select albums or people');
+    }
+
+    let sourceAssetIds: string[] = [];
+    if (albumIds.length > 0) {
+      await this.requireAccess({ auth, permission: Permission.AlbumRead, ids: albumIds });
+      sourceAssetIds = await this.albumRepository.getAssetIdsByAlbumIds(albumIds);
+    } else {
+      const ownedPersonIds = await this.personRepository.listOwnedPersonGroupIds(auth.user.id, personIds);
+      if (new Set(ownedPersonIds).size !== new Set(personIds).size) {
+        throw new BadRequestException('One or more people were not found');
+      }
+      sourceAssetIds = await this.personRepository.getAssetIdsForPersonGroups(auth.user.id, personIds);
+    }
+
+    const allowedAssetIds = await this.checkAccess({
+      auth,
+      permission: Permission.AssetShare,
+      ids: sourceAssetIds,
+    });
+    if (allowedAssetIds.size === 0) {
+      throw new BadRequestException('No photos you can share were found');
+    }
+
+    const albumUsers =
+      dto.share.mode === 'user'
+        ? [
+            {
+              userId: dto.share.userId,
+              role: dto.share.role === AlbumUserRole.Editor ? AlbumUserRole.Editor : AlbumUserRole.Viewer,
+            },
+          ]
+        : [];
+
+    if (dto.share.mode === 'user' && dto.share.userId === auth.user.id) {
+      throw new BadRequestException('Choose a different user');
+    }
+
+    const album = await this.create(auth, {
+      albumName: dto.albumName,
+      assetIds: [...allowedAssetIds],
+      albumUsers,
+    });
+
+    if (dto.share.mode !== 'public') {
+      return { album, sharedLinkKey: null, sharedLinkSlug: null };
+    }
+
+    const sharedLink = await this.sharedLinkRepository.create({
+      key: this.cryptoRepository.randomBytes(50),
+      userId: auth.user.id,
+      type: SharedLinkType.Album,
+      albumId: album.id,
+      description: null,
+      password: null,
+      uploadPassword: null,
+      expiresAt: null,
+      uploadExpiresAt: null,
+      allowUpload: false,
+      allowDownload: dto.share.allowDownload ?? true,
+      showExif: true,
+      slug: null,
+    });
+    const mappedLink = mapSharedLink(sharedLink, { stripAssetMetadata: true });
+
+    return {
+      album,
+      sharedLinkKey: mappedLink.key,
+      sharedLinkSlug: mappedLink.slug,
+    };
   }
 
   async update(auth: AuthDto, id: string, dto: UpdateAlbumDto): Promise<AlbumResponseDto> {

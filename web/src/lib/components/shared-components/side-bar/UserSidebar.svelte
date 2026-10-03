@@ -5,6 +5,7 @@
   import { authManager } from '$lib/managers/auth-manager.svelte';
   import { featureFlagsManager } from '$lib/managers/feature-flags-manager.svelte';
   import { Route } from '$lib/route';
+  import { allows } from '$lib/utils/privileges';
   import { recentAlbumsDropdown } from '$lib/stores/preferences.store';
   import { NavbarGroup, NavbarItem } from '@immich/ui';
   import {
@@ -26,6 +27,8 @@
     mdiLock,
     mdiLockOutline,
     mdiMagnify,
+    mdiStar,
+    mdiStarOutline,
     mdiMap,
     mdiMapOutline,
     mdiTagMultipleOutline,
@@ -41,6 +44,10 @@
 
 <Sidebar ariaLabel={$t('primary')}>
   <NavbarItem title={$t('photos')} href={Route.photos()} icon={mdiImageMultipleOutline} activeIcon={mdiImageMultiple} />
+
+  {#if allows('viewFeatured')}
+    <NavbarItem title={$t('featured')} href={Route.featured()} icon={mdiStarOutline} activeIcon={mdiStar} />
+  {/if}
 
   {#if featureFlagsManager.value.search}
     <NavbarItem title={$t('explore')} href={Route.explore()} icon={mdiMagnify} />

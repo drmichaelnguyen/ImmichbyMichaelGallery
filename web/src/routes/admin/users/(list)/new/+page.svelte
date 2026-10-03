@@ -5,6 +5,8 @@
   import { handleCreateUserAdmin } from '$lib/services/user-admin.service';
   import { userInteraction } from '$lib/stores/user.svelte';
   import { ByteUnit, convertToBytes } from '$lib/utils/byte-units';
+  import GalleryPrivilegesFields from '$lib/components/admin/GalleryPrivilegesFields.svelte';
+  import { newUserPrivileges } from '$lib/utils/privileges';
   import { Field, FormModal, HelperText, Input, PasswordInput, Stack, Switch } from '@immich/ui';
   import { t } from 'svelte-i18n';
 
@@ -17,6 +19,7 @@
   let shouldChangePassword = $state(true);
   let notify = $state(true);
   let isAdmin = $state(false);
+  let privileges = $state(newUserPrivileges());
 
   let quotaSize: string | undefined = $state();
   let isCreatingUser = $state(false);
@@ -51,6 +54,7 @@
       quotaSizeInBytes,
       notify,
       isAdmin,
+      privileges: isAdmin ? undefined : privileges,
     });
 
     if (user) {
@@ -104,5 +108,9 @@
     <Field label={$t('admin.admin_user')}>
       <Switch bind:checked={isAdmin} />
     </Field>
+
+    {#if !isAdmin}
+      <GalleryPrivilegesFields bind:privileges />
+    {/if}
   </Stack>
 </FormModal>

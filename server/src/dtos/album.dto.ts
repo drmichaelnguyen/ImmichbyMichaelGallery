@@ -55,6 +55,31 @@ const CreateAlbumSchema = z
   })
   .meta({ id: 'CreateAlbumDto' });
 
+const AlbumSelectionShareSchema = z.discriminatedUnion('mode', [
+  z
+    .object({
+      mode: z.literal('public'),
+      allowDownload: z.boolean().optional().describe('Allow public downloads'),
+    })
+    .describe('Share with a public link'),
+  z
+    .object({
+      mode: z.literal('user'),
+      userId: z.uuidv4().describe('Registered user ID'),
+      role: AlbumUserRoleSchema.optional().describe('Access role for the registered user'),
+    })
+    .describe('Share with a registered user'),
+]);
+
+const CreateAlbumFromSelectionSchema = z
+  .object({
+    albumName: z.string().trim().min(1).describe('Album name'),
+    albumIds: z.array(z.uuidv4()).optional().describe('Albums whose photos are copied into the new album'),
+    personIds: z.array(z.uuidv4()).optional().describe('People whose photos are copied into the new album'),
+    share: AlbumSelectionShareSchema,
+  })
+  .meta({ id: 'CreateAlbumFromSelectionDto' });
+
 const AlbumsAddAssetsSchema = z
   .object({
     albumIds: z.array(z.uuidv4()).describe('Album IDs'),
@@ -190,6 +215,14 @@ export const AlbumResponseSchema = z
   })
   .meta({ id: 'AlbumResponseDto' });
 
+const AlbumFromSelectionResponseSchema = z
+  .object({
+    album: AlbumResponseSchema,
+    sharedLinkKey: z.string().nullable().describe('Public link key'),
+    sharedLinkSlug: z.string().nullable().describe('Public link slug'),
+  })
+  .meta({ id: 'AlbumFromSelectionResponseDto' });
+
 const AlbumUserParamSchema = z.object({
   id: z.uuidv4().describe('Album ID'),
   // TODO: disallow 'me' as a shortcut in v4 and type userId as uuidv4
@@ -213,6 +246,8 @@ export class GetAlbumsDto extends createZodDto(GetAlbumsSchema) {}
 export class AlbumStatisticsResponseDto extends createZodDto(AlbumStatisticsResponseSchema) {}
 export class UpdateAlbumUserDto extends createZodDto(UpdateAlbumUserSchema) {}
 export class AlbumResponseDto extends createZodDto(AlbumResponseSchema) {}
+export class CreateAlbumFromSelectionDto extends createZodDto(CreateAlbumFromSelectionSchema) {}
+export class AlbumFromSelectionResponseDto extends createZodDto(AlbumFromSelectionResponseSchema) {}
 class AlbumUserResponseDto extends createZodDto(AlbumUserResponseSchema) {}
 
 export type MapAlbumDto = {

@@ -10,6 +10,7 @@
   import { deleteAssets, type AssetResponseDto } from '@immich/sdk';
   import { IconButton, modalManager, toastManager } from '@immich/ui';
   import { mdiDeleteForeverOutline, mdiDeleteOutline } from '@mdi/js';
+  import { allows } from '$lib/utils/privileges';
   import { t } from 'svelte-i18n';
   import type { OnAction, PreAction } from './action';
 
@@ -23,8 +24,12 @@
   let { asset, onAction, preAction, onUndoDelete = undefined }: Props = $props();
 
   const forceDefault = $derived(asset.isTrashed || !featureFlagsManager.value.trash);
+  const canDelete = $derived(allows('delete'));
 
   const trashOrDelete = async (forceRequest?: boolean) => {
+    if (!canDelete) {
+      return;
+    }
     const timelineAsset = toTimelineAsset(asset);
     const force = forceDefault || forceRequest;
 
@@ -65,6 +70,7 @@
   ]}
 />
 
+{#if canDelete}
 <IconButton
   color="secondary"
   shape="round"
@@ -73,3 +79,4 @@
   aria-label={forceDefault ? $t('permanently_delete') : $t('delete')}
   onclick={() => trashOrDelete()}
 />
+{/if}

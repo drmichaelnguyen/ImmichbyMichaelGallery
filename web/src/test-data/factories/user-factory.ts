@@ -17,6 +17,13 @@ export const userAdminFactory = Sync.makeFactory<UserAdminResponseDto>({
   quotaUsageInBytes: 0,
   quotaSizeInBytes: 1000,
   shouldChangePassword: false,
+  privileges: {
+    viewFeatured: true,
+    download: true,
+    upload: true,
+    edit: true,
+    delete: true,
+  },
   status: UserStatus.Active,
   storageLabel: null,
   license: {

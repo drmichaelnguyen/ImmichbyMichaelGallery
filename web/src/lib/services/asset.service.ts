@@ -75,6 +75,7 @@ import {
   sleep,
 } from '$lib/utils';
 import { handleError } from '$lib/utils/handle-error';
+import { allows } from '$lib/utils/privileges';
 import { getFormatter } from '$lib/utils/i18n';
 import { asQueryString } from '$lib/utils/shared-links';
 import { getFilenameExtension } from '$lib/utils/asset-utils';
@@ -328,14 +329,14 @@ export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto & 
     title: isRaw ? $t('download_photo_jpg') : $t('download'),
     icon: mdiDownload,
     shortcuts: { key: 'd', shift: true },
-    $if: () => !!authUser,
+    $if: () => !!authUser && allows('download'),
     onAction: () => handleDownloadAsset(asset, { edited: true, asGalleryPhoto: isRaw }),
   };
 
   const DownloadOriginal: ActionItem = {
     title: originalDownloadTitle($t, asset),
     icon: mdiDownloadBox,
-    $if: () => !!authUser && (asset.isEdited || isRaw),
+    $if: () => !!authUser && allows('download') && (asset.isEdited || isRaw),
     onAction: () => handleDownloadAsset(asset, { edited: false }),
   };
 
@@ -509,7 +510,7 @@ export const getAssetActions = ($t: MessageFormatter, asset: AssetResponseDto & 
         return !!sharedLink.allowDownload && isEditableSharedAsset(asset);
       }
 
-      return isOwner;
+      return isOwner && allows('edit');
     },
     onAction: () => assetViewerManager.openEditor(),
     shortcuts: [{ key: 'e' }],

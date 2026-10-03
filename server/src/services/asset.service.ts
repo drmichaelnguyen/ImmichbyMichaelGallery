@@ -100,6 +100,7 @@ export class AssetService extends BaseService {
   }
 
   async update(auth: AuthDto, id: string, dto: UpdateAssetDto): Promise<AssetResponseDto> {
+    await this.requirePrivilege(auth, 'edit');
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids: [id] });
 
     const { description, dateTimeOriginal, latitude, longitude, rating, ...rest } = dto;
@@ -149,6 +150,7 @@ export class AssetService extends BaseService {
       dateTimeRelative,
       timeZone,
     } = dto;
+    await this.requirePrivilege(auth, 'edit');
     await this.requireAccess({ auth, permission: Permission.AssetUpdate, ids });
 
     const assetDto = _.omitBy({ isFavorite, isFeatured, visibility, duplicateId }, _.isUndefined);
@@ -368,6 +370,7 @@ export class AssetService extends BaseService {
   async deleteAll(auth: AuthDto, dto: AssetBulkDeleteDto): Promise<void> {
     const { ids, force } = dto;
 
+    await this.requirePrivilege(auth, 'delete');
     await this.requireAccess({ auth, permission: Permission.AssetDelete, ids });
     await this.assetRepository.updateAll(ids, {
       deletedAt: new Date(),
@@ -533,6 +536,7 @@ export class AssetService extends BaseService {
   }
 
   async editAsset(auth: AuthDto, id: string, dto: AssetEditsCreateDto): Promise<AssetEditsResponseDto> {
+    await this.requirePrivilege(auth, 'edit');
     await this.requireAccess({ auth, permission: Permission.AssetEditCreate, ids: [id] });
 
     const asset = await this.assetRepository.getForEdit(id);

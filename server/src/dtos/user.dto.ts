@@ -5,8 +5,19 @@ import { pinCodeRegex } from 'src/dtos/auth.dto';
 import { UserAvatarColor, UserAvatarColorSchema, UserMetadataKey, UserStatusSchema } from 'src/enum';
 import { MaybeDehydrated, UserMetadataItem } from 'src/types';
 import { asDateTimeString } from 'src/utils/date';
+import { getPrivileges } from 'src/utils/privileges';
 import { isoDatetimeToDate, sanitizeFilename, stringToBool, toEmail } from 'src/validation';
 import z from 'zod';
+
+export const GalleryPrivilegesSchema = z
+  .object({
+    viewFeatured: z.boolean().describe('Can open the featured gallery while signed in'),
+    download: z.boolean().describe('Can download photos and videos'),
+    upload: z.boolean().describe('Can upload photos and videos'),
+    edit: z.boolean().describe('Can edit photos and their details'),
+    delete: z.boolean().describe('Can delete photos and videos'),
+  })
+  .meta({ id: 'GalleryPrivilegesDto' });
 
 export const UserUpdateMeSchema = z
   .object({
@@ -87,6 +98,7 @@ export const UserAdminCreateSchema = z
     shouldChangePassword: z.boolean().optional().describe('Require password change on next login'),
     notify: z.boolean().optional().describe('Send notification email'),
     isAdmin: z.boolean().optional().describe('Grant admin privileges'),
+    privileges: GalleryPrivilegesSchema.optional().describe('Gallery privileges'),
   })
   .meta({ id: 'UserAdminCreateDto' });
 
@@ -103,6 +115,7 @@ const UserAdminUpdateSchema = z
     shouldChangePassword: z.boolean().optional().describe('Require password change on next login'),
     quotaSizeInBytes: z.int().min(0).nullish().describe('Storage quota in bytes'),
     isAdmin: z.boolean().optional().describe('Grant admin privileges'),
+    privileges: GalleryPrivilegesSchema.optional().describe('Gallery privileges'),
   })
   .meta({ id: 'UserAdminUpdateDto' });
 
@@ -132,6 +145,7 @@ const UserAdminResponseSchema = UserResponseSchema.extend({
   quotaUsageInBytes: z.int().min(0).nullable().describe('Storage usage in bytes'),
   status: UserStatusSchema,
   license: UserLicenseSchema.nullable(),
+  privileges: GalleryPrivilegesSchema,
 }).meta({ id: 'UserAdminResponseDto' });
 
 export class UserAdminResponseDto extends createZodDto(UserAdminResponseSchema) {}
@@ -156,5 +170,6 @@ export function mapUserAdmin(entity: UserAdmin): UserAdminResponseDto {
     quotaUsageInBytes: entity.quotaUsageInBytes,
     status: entity.status,
     license: license ? { ...license, activatedAt: new Date(license.activatedAt) } : null,
+    privileges: getPrivileges(entity.metadata || []),
   };
 }

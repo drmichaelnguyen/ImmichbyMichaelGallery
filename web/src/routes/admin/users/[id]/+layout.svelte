@@ -1,5 +1,6 @@
 <script lang="ts">
   import { goto, invalidateAll } from '$app/navigation';
+  import GalleryPrivilegesFields from '$lib/components/admin/GalleryPrivilegesFields.svelte';
   import AdminCard from '$lib/components/AdminCard.svelte';
   import AdminPageLayout from '$lib/components/layouts/AdminPageLayout.svelte';
   import OnEvents from '$lib/components/OnEvents.svelte';
@@ -8,7 +9,8 @@
   import DeviceCard from '$lib/components/user-settings-page/DeviceCard.svelte';
   import FeatureSetting from './FeatureSetting.svelte';
   import { Route } from '$lib/route';
-  import { getUserAdminActions } from '$lib/services/user-admin.service';
+  import { getUserAdminActions, handleUpdateUserAdmin } from '$lib/services/user-admin.service';
+  import { fullPrivileges, type GalleryPrivileges } from '$lib/utils/privileges';
   import { locale } from '$lib/stores/preferences.store';
   import { createDateFormatter, findLocale } from '$lib/utils';
   import { getBytesWithUnit } from '$lib/utils/byte-units';
@@ -16,6 +18,7 @@
   import {
     Alert,
     Badge,
+    Button,
     CardTitle,
     Code,
     CommandPaletteDefaultProvider,
@@ -38,6 +41,7 @@
     mdiDevices,
     mdiFeatureSearchOutline,
     mdiPlayCircle,
+    mdiShieldAccountOutline,
     mdiTrashCanOutline,
   } from '@mdi/js';
   import type { Snippet } from 'svelte';
@@ -72,6 +76,21 @@
   ];
 
   const { ResetPassword, ResetPinCode, Update, Delete, Restore } = $derived(getUserAdminActions($t, user));
+  let privileges = $state<GalleryPrivileges>(fullPrivileges());
+  let privilegesForUserId = $state('');
+
+  $effect(() => {
+    if (privilegesForUserId === user.id) {
+      return;
+    }
+
+    privileges = { ...fullPrivileges(), ...user.privileges };
+    privilegesForUserId = user.id;
+  });
+
+  const savePrivileges = async () => {
+    await handleUpdateUserAdmin(user, { privileges });
+  };
 
   const onUpdate = async (update: UserAdminResponseDto) => {
     if (update.id !== user.id) {
@@ -163,6 +182,15 @@
               <Code>{user.id}</Code>
             </div>
           </Stack>
+        </AdminCard>
+
+        <AdminCard icon={mdiShieldAccountOutline} title={$t('admin.gallery_privileges')}>
+          {#if user.isAdmin}
+            <Text>{$t('admin.admins_have_full_access')}</Text>
+          {:else}
+            <GalleryPrivilegesFields bind:privileges />
+            <Button class="mt-4" size="small" onclick={savePrivileges}>{$t('admin.save_privileges')}</Button>
+          {/if}
         </AdminCard>
 
         <AdminCard icon={mdiFeatureSearchOutline} title={$t('features')}>

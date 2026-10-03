@@ -6,9 +6,11 @@ import {
   AlbumResponseDto,
   AlbumsAddAssetsDto,
   AlbumsAddAssetsResponseDto,
+  AlbumFromSelectionResponseDto,
   AlbumStatisticsResponseDto,
   AlbumUserParamDto,
   CreateAlbumDto,
+  CreateAlbumFromSelectionDto,
   GetAlbumsDto,
   UpdateAlbumDto,
   UpdateAlbumUserDto,
@@ -46,6 +48,20 @@ export class AlbumController {
   })
   createAlbum(@Auth() auth: AuthDto, @Body() dto: CreateAlbumDto): Promise<AlbumResponseDto> {
     return this.service.create(auth, dto);
+  }
+
+  @Post('from-selection')
+  @Authenticated({ permission: Permission.AlbumCreate })
+  @Endpoint({
+    summary: 'Create an album from albums or people',
+    description: 'Copy photos from selected albums or people into a new album and share it publicly or with a user.',
+    history: new HistoryBuilder().added('v3.2.2'),
+  })
+  createAlbumFromSelection(
+    @Auth() auth: AuthDto,
+    @Body() dto: CreateAlbumFromSelectionDto,
+  ): Promise<AlbumFromSelectionResponseDto> {
+    return this.service.createFromSelection(auth, dto);
   }
 
   @Get('statistics')

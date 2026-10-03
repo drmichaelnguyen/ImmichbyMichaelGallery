@@ -18,10 +18,18 @@
   interface Props {
     groupedAlbums: AlbumGroup[];
     albumGroupOption?: string;
+    selectedAlbumIds?: string[];
+    onToggleAlbum?: ((album: AlbumResponseDto) => void) | undefined;
     onShowContextMenu?: ((position: ContextMenuPosition, album: AlbumResponseDto) => unknown) | undefined;
   }
 
-  let { groupedAlbums, albumGroupOption = AlbumGroupBy.None, onShowContextMenu }: Props = $props();
+  let {
+    groupedAlbums,
+    albumGroupOption = AlbumGroupBy.None,
+    selectedAlbumIds = [],
+    onToggleAlbum = undefined,
+    onShowContextMenu,
+  }: Props = $props();
 </script>
 
 <table class="mt-2 w-full text-start">
@@ -37,7 +45,7 @@
   {#if albumGroupOption === AlbumGroupBy.None}
     <tbody class="block w-full overflow-y-auto rounded-md border dark:border-immich-dark-gray dark:text-immich-dark-fg">
       {#each groupedAlbums[0].albums as album (album.id)}
-        <AlbumTableRow {album} {onShowContextMenu} />
+        <AlbumTableRow {album} {selectedAlbumIds} {onToggleAlbum} {onShowContextMenu} />
       {/each}
     </tbody>
   {:else}
@@ -71,7 +79,7 @@
           transition:slide={{ duration: 300 }}
         >
           {#each albumGroup.albums as album (album.id)}
-            <AlbumTableRow {album} {onShowContextMenu} />
+            <AlbumTableRow {album} {selectedAlbumIds} {onToggleAlbum} {onShowContextMenu} />
           {/each}
         </tbody>
       {/if}

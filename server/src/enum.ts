@@ -374,6 +374,7 @@ export enum UserMetadataKey {
   Preferences = 'preferences',
   License = 'license',
   Onboarding = 'onboarding',
+  Privileges = 'privileges',
 }
 
 export const UserMetadataKeySchema = z

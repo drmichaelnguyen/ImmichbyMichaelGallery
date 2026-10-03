@@ -24,9 +24,11 @@
     onMergePeople: () => void;
     onHidePerson: () => void;
     onToggleFavorite: () => void;
+    selected?: boolean;
+    onSelect?: () => void;
   };
 
-  let { person, onMergePeople, onHidePerson, onToggleFavorite }: Props = $props();
+  let { person, onMergePeople, onHidePerson, onToggleFavorite, selected = false, onSelect }: Props = $props();
 
   let showVerticalDots = $state(false);
 
@@ -41,11 +43,21 @@
   role="group"
   use:focusOutside={{ onFocusOut: () => (showVerticalDots = false) }}
 >
-  <a
-    href={Route.viewPerson(person, { previousRoute: Route.people() })}
-    draggable="false"
-    onfocus={() => (showVerticalDots = true)}
-  >
+  {#if onSelect}
+    <button type="button" class="w-full {selected ? 'rounded-full ring-2 ring-primary' : ''}" onclick={onSelect}>
+      {@render face()}
+    </button>
+  {:else}
+    <a
+      href={Route.viewPerson(person, { previousRoute: Route.people() })}
+      draggable="false"
+      onfocus={() => (showVerticalDots = true)}
+    >
+      {@render face()}
+    </a>
+  {/if}
+
+  {#snippet face()}
     <div class="size-full rounded-xl brightness-95 filter">
       <ImageThumbnail
         shadow
@@ -62,7 +74,7 @@
         </div>
       {/if}
     </div>
-  </a>
+  {/snippet}
 
   {#if showVerticalDots}
     <div class="absolute inset-e-2 top-2 z-1">

@@ -130,6 +130,10 @@ export class AssetMediaService extends BaseService {
   ): Promise<AssetMediaResponseDto> {
     let asset: Asset | undefined;
     try {
+      if (!auth.sharedLink) {
+        await this.requirePrivilege(auth, 'upload');
+      }
+
       await this.requireAccess({
         auth,
         permission: Permission.AssetUpload,
@@ -227,6 +231,7 @@ export class AssetMediaService extends BaseService {
   }
 
   async downloadOriginal(auth: AuthDto, id: string, dto: AssetDownloadOriginalDto): Promise<ImmichFileResponse> {
+    await this.requirePrivilege(auth, 'download');
     await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: [id] });
 
     const { originalPath, originalFileName, editedPath } = await this.assetRepository.getForOriginal(

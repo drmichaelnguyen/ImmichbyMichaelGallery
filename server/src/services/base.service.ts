@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { Insertable } from 'kysely';
 import sanitize from 'sanitize-filename';
 import { SALT_ROUNDS } from 'src/constants';
@@ -62,7 +62,10 @@ import { WebsocketRepository } from 'src/repositories/websocket.repository';
 import { WorkflowRepository } from 'src/repositories/workflow.repository';
 import { UserTable } from 'src/schema/tables/user.table';
 import { ClassConstructor } from 'src/types';
+import { AuthDto } from 'src/dtos/auth.dto';
+import { GalleryPrivileges } from 'src/types';
 import { AccessRequest, checkAccess, requireAccess } from 'src/utils/access';
+import { getPrivileges } from 'src/utils/privileges';
 import { getConfig, updateConfig } from 'src/utils/config';
 
 export const BASE_SERVICE_DEPENDENCIES = [
@@ -287,6 +290,17 @@ export class BaseService {
 
   checkAccess(request: AccessRequest) {
     return checkAccess(this.accessRepository, request);
+  }
+
+  async requirePrivilege(auth: AuthDto, privilege: keyof GalleryPrivileges) {
+    if (auth.sharedLink || auth.user.isAdmin) {
+      return;
+    }
+
+    const metadata = await this.userRepository.getMetadata(auth.user.id);
+    if (!getPrivileges(metadata)[privilege]) {
+      throw new ForbiddenException('This account does not have permission to do that');
+    }
   }
 
   async isSetupAvailable(): Promise<boolean> {

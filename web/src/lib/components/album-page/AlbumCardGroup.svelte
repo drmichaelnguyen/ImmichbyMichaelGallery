@@ -17,6 +17,8 @@
     showOwner?: boolean;
     showDateRange?: boolean;
     showItemCount?: boolean;
+    selectedAlbumIds?: string[];
+    onToggleAlbum?: ((album: AlbumResponseDto) => void) | undefined;
     onShowContextMenu?: ((position: ContextMenuPosition, album: AlbumResponseDto) => unknown) | undefined;
   }
 
@@ -26,6 +28,8 @@
     showOwner = false,
     showDateRange = false,
     showItemCount = false,
+    selectedAlbumIds = [],
+    onToggleAlbum = undefined,
     onShowContextMenu = undefined,
   }: Props = $props();
 
@@ -63,21 +67,32 @@
   {#if !isCollapsed}
     <div class="grid grid-auto-fill-56 gap-y-4" transition:slide={{ duration: 300 }}>
       {#each albums as album, index (album.id)}
-        <a
-          href={Route.viewAlbum(album)}
-          class="h-fit"
-          animate:flip={{ duration: 400 }}
-          oncontextmenu={(event) => oncontextmenu(event, album)}
-        >
-          <AlbumCard
-            {album}
-            {showOwner}
-            {showDateRange}
-            {showItemCount}
-            preload={index < 20}
-            onShowContextMenu={onShowContextMenu ? (position) => showContextMenu(position, album) : undefined}
-          />
-        </a>
+        {@const selected = selectedAlbumIds.includes(album.id)}
+        {#if onToggleAlbum}
+          <button
+            type="button"
+            class="h-fit rounded-2xl text-start {selected ? 'ring-2 ring-primary' : ''}"
+            onclick={() => onToggleAlbum?.(album)}
+          >
+            <AlbumCard {album} {showOwner} {showDateRange} {showItemCount} preload={index < 20} />
+          </button>
+        {:else}
+          <a
+            href={Route.viewAlbum(album)}
+            class="h-fit"
+            animate:flip={{ duration: 400 }}
+            oncontextmenu={(event) => oncontextmenu(event, album)}
+          >
+            <AlbumCard
+              {album}
+              {showOwner}
+              {showDateRange}
+              {showItemCount}
+              preload={index < 20}
+              onShowContextMenu={onShowContextMenu ? (position) => showContextMenu(position, album) : undefined}
+            />
+          </a>
+        {/if}
       {/each}
     </div>
   {/if}

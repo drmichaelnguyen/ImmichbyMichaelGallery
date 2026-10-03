@@ -15,6 +15,7 @@ import { getPreferences } from 'src/utils/preferences';
 @Injectable()
 export class DownloadService extends BaseService {
   async getDownloadInfo(auth: AuthDto, dto: DownloadInfoDto): Promise<DownloadResponseDto> {
+    await this.requirePrivilege(auth, 'download');
     let assets;
 
     if (dto.assetIds) {
@@ -83,6 +84,7 @@ export class DownloadService extends BaseService {
   }
 
   async downloadArchive(auth: AuthDto, dto: DownloadArchiveDto): Promise<ImmichReadStream> {
+    await this.requirePrivilege(auth, 'download');
     await this.requireAccess({ auth, permission: Permission.AssetDownload, ids: dto.assetIds });
 
     const zip = this.storageRepository.createZipStream();
