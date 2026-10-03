@@ -8,7 +8,6 @@
   import { Icon } from '@immich/ui';
   import { mdiChevronRight } from '@mdi/js';
   import { t } from 'svelte-i18n';
-  import { flip } from 'svelte/animate';
   import { slide } from 'svelte/transition';
 
   interface Props {
@@ -80,7 +79,6 @@
           <a
             href={Route.viewAlbum(album)}
             class="h-fit"
-            animate:flip={{ duration: 400 }}
             oncontextmenu={(event) => oncontextmenu(event, album)}
           >
             <AlbumCard
